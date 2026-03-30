@@ -37,5 +37,12 @@ https://www.figma.com/design/hx2UxeE2X2QcXvFQk0on60/Dialy-UI-Kit-%7C-Free-Mobile
 깃허브 브랜치 테스트
 ㅎㅇ cmin03
 
+<<<<<<< HEAD
 
 ㅎㅇㅎㅇㅎㅇ
+=======
+ㅎㅇㅎㅇㅎㅇ
+권민석
+
+정현우
+>>>>>>> main
