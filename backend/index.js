@@ -1,6 +1,9 @@
-const { PrismaClient } = require('@prisma/client');
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const { PrismaClient } = require('@prisma/client');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const multer = require('multer');
 
 // Prisma Client 초기화 (Prisma 7에서는 별도 설정 없이도 config.ts를 참조합니다)
 const prisma = new PrismaClient({
@@ -14,17 +17,88 @@ const port = 5000;
 app.use(cors()); 
 app.use(express.json());
 
-// 1. 서버 상태 확인용 루트 경로
-app.get('/', (req, res) => {
-  res.send('OneResume 백엔드 서버가 아주 잘 돌아가고 있습니다! 🚀');
+// S3 클라이언트 설정
+const s3 = new S3Client({
+	region: process.env.AWS_REGION,
+	credentials: {
+		accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+		secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+	},
 });
 
-// 2. 이력서 저장 API (DB 연동 완료)
+// S3 버킷 이름이 정확히 들어오는지 터미널에서 확인하기 위한 로그
+console.log("타겟 S3 버킷 이름:", process.env.S3_BUCKET_NAME);
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB 용량 제한
+});
+
+// 프로필 이미지 S3 직접 업로드 API (multer로 메모리에 저장된 파일을 AWS SDK로 직접 S3에 업로드)
+app.post('/api/upload', upload.single('profileImage'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "파일이 전달되지 않았습니다." });
+    }
+
+    // 파일 이름을 UTF-8로 인코딩하여 S3에 저장 (한글 파일명 깨짐 방지)
+    const encodedName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+    const fileName = `profiles/${Date.now()}_${encodedName}`;
+    const bucketName = process.env.S3_BUCKET_NAME.trim();
+
+    // S3에 업로드할 명령어 생성 (파일 버퍼와 MIME 타입 포함)
+    const command = new PutObjectCommand({
+      Bucket: bucketName,
+      Key: fileName,
+      Body: req.file.buffer, // multer로 메모리에 저장된 파일 버퍼
+      ContentType: req.file.mimetype,
+    });
+
+    // S3에 파일 업로드 실행
+    await s3.send(command);
+
+    // 업로드된 파일의 공개 URL 생성 (버킷이 퍼블릭 액세스 허용되어 있다고 가정)
+    const fileUrl = `https://${bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileName}`;
+
+    console.log("✅ 이미지 S3 직접 업로드 성공:", fileUrl);
+    res.status(200).json({ imageUrl: fileUrl });
+
+  } catch (error) {
+    console.error("❌ S3 직접 업로드 에러:", error);
+    res.status(500).json({ message: "S3 업로드 중 에러가 발생했습니다." });
+  }
+});
+
+// 서브도메인으로 사용자 데이터 조회 API
+app.get('/api/user/:subdomain', async (req, res) => {
+	try {
+		const { subdomain } = req.params;
+		const user = await prisma.user.findUnique({
+			where: { subdomain },
+			include: {
+				resumes: {
+					include: { projects: true }
+				}
+			}
+		});
+
+		if (!user) {
+			return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+		}
+		console.log("DB에서 불러온 유저 정보:", user.username, user.profileImageUrl);
+		res.status(200).json(user);
+	} catch (error) {
+		console.error("데이터 로드 에러:", error);
+		res.status(500).json({ message: "데이터를 불러오는 중 서버 오류가 발생했습니다." });
+	}
+});
+
+// 이력서 저장 API (DB 연동 완료)
 app.post('/api/save-resume', async (req, res) => {
   try {
     // 프론트엔드에서 보낸 데이터 구조 분해 할당
     const {
-      username, email, subdomain, bio, githubUrl, blogUrl,
+      username, email, subdomain, bio, githubUrl, blogUrl, profileImageUrl,
       resumeTitle, school, major, gpa, skills, projects
     } = req.body;
 
@@ -46,7 +120,7 @@ app.post('/api/save-resume', async (req, res) => {
     const educationArr = [school, major, gpa].filter(Boolean);
     const educationString = educationArr.length > 0 ? educationArr.join(" | ") : null;
 
-    // 3) 프로젝트 배열에서 이름이나 설명이 있는 '유효한' 프로젝트만 필터링
+    // 4) 프로젝트 배열에서 이름이나 설명이 있는 '유효한' 프로젝트만 필터링
     const validProjects = Array.isArray(projects) 
       ? projects.filter(p => p.name || p.description).map(p => ({
           name: p.name || "",
@@ -59,13 +133,14 @@ app.post('/api/save-resume', async (req, res) => {
 
     console.log(`--- [${username}]님의 데이터 저장 시작 ---`);
 
-    // 4) User 데이터 저장 (upsert: 이메일 기준. 있으면 수정, 없으면 생성)
+    // 5) User 데이터 저장 (upsert: 이메일 기준. 있으면 수정, 없으면 생성)
     const user = await prisma.user.upsert({
       where: { email: email },
       update: {
         username: username || "",
         subdomain: subdomain,
         bio: bio || "",
+								profileImageUrl: profileImageUrl || "", // 프로필 이미지 URL도 업데이트
         githubUrl: githubUrl || "",
         blogUrl: blogUrl || ""
       },
@@ -75,12 +150,13 @@ app.post('/api/save-resume', async (req, res) => {
         username: username || "이름 없음",
         subdomain: subdomain,
         bio: bio || "",
+								profileImageUrl: profileImageUrl || "", // 프로필 이미지 URL도 저장
         githubUrl: githubUrl || "",
         blogUrl: blogUrl || ""
       }
     });
 
-    // 5) 해당 유저의 기존 이력서가 있는지 확인
+    // 6) 해당 유저의 기존 이력서가 있는지 확인
     const existingResume = await prisma.resume.findFirst({
       where: { userId: user.id }
     });
@@ -128,31 +204,6 @@ app.post('/api/save-resume', async (req, res) => {
     }
 
     res.status(500).json({ message: "서버 저장 중 오류가 발생했습니다." });
-  }
-});
-
-// 3. 서브도메인 기반 유저 데이터 조회 API (핵심!)
-app.get('/api/user/:subdomain', async (req, res) => {
-  const { subdomain } = req.params;
-
-  try {
-    const userData = await prisma.user.findUnique({
-      where: { subdomain: subdomain },
-      include: {
-        resumes: {
-          include: { projects: true }
-        }
-      }
-    });
-
-    if (!userData) {
-      return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
-    }
-
-    res.json(userData);
-  } catch (error) {
-    console.error('사용자 조회 중 오류 발생:', error);
-    res.status(500).json({ message: 'DB 조회 실패', error: error.message });
   }
 });
 
