@@ -1,14 +1,54 @@
 import { API_BASE_URL } from "../config";
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { PWD_REGEX, ValidationItem } from '../components/PasswordValidation';
 
-const Signup = ({ onSuccess, onSwitch, isDarkMode }) => {
+		const Signup = ({ onSuccess, onSwitch, isDarkMode }) => {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
+		const [confirmPassword, setConfirmPassword] = useState('');
   const [subdomain, setSubdomain] = useState('');
   const [step, setStep] = useState(0); 
+
+		// 실시간 유효성 검사 상태
+		const [validations, setValidations] = useState({
+			length: false,
+			upper: false,
+			number: false,
+			special: false,
+			match: false
+		});
+
+		//비밀번호가 바뀔 때마다 체크
+		useEffect(() => {
+			setValidations({
+				length: password.length >= 8,
+				upper: /[A-Z]/.test(password),
+				number: /\d/.test(password),
+				special: /[@$!%*?&]/.test(password),
+				match: password.length > 0 && password === confirmPassword
+			});
+		}, [password, confirmPassword]);
+
+		// 입력창 테두리 및 배경색 제어 함수
+const getInputBorderClass = (value, isValidSection) => {
+    const baseClass = "w-full px-4 py-3 rounded-xl border-2 outline-none transition-all duration-200 focus:ring-2 ";
+    const bgClass = isDarkMode ? "bg-slate-900 text-white placeholder-slate-500 " : "bg-white text-slate-800 placeholder-slate-400 ";
+    
+    if (value.length > 0) {
+      return baseClass + bgClass + (
+        isValidSection 
+          ? // 성공
+            "border-emerald-400 focus:border-emerald-400 focus:ring-emerald-400/20" 
+          : // 실패
+            "border-red-400 focus:border-red-400 focus:ring-red-400/20"
+      );
+    }
+    // 초기 상태
+    return baseClass + bgClass + (isDarkMode ? "border-slate-700" : "border-slate-200");
+  };
 
   const handleSendCode = async () => {
     const loading = toast.loading("인증번호를 발송 중입니다...");
@@ -32,13 +72,18 @@ const Signup = ({ onSuccess, onSwitch, isDarkMode }) => {
   };
 
   const handleFinalSignup = async () => {
-    const loading = toast.loading("회원가입 처리 중...");
+			// 가입 전 최종 보안 체크
+			if (!PWD_REGEX.test(password)) {
+				toast.error("비밀번호 보안 정책을 확인해주세요.");
+				return;
+			}
+    const loading = toast.loading("회원가입 중...");
     try {
       const response = await axios.post(`${API_BASE_URL}/api/auth/signup`, { email, password, subdomain });
       toast.success("OneResume에 오신 걸 환영합니다", { id: loading });
       if (onSuccess) onSuccess(response.data);
     } catch (err) {
-      toast.error(err.response?.data?.message || "가입 중 오류 발생", { id: loading });
+      toast.error(err.response?.data?.message || "가입 실패", { id: loading });
     }
   };
 
@@ -92,33 +137,61 @@ const Signup = ({ onSuccess, onSwitch, isDarkMode }) => {
         )}
 
         {step === 2 && (
-          <div className="space-y-5">
+          <div className="space-y-5 animate-fade-in">
             <div>
               <label className={`block text-sm font-bold mb-2 ml-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>비밀번호</label>
               <input 
                 type="password" 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className={inputClass}
-                placeholder="8자 이상 입력"
+                className={getInputBorderClass(password, validations.length && validations.upper && validations.number && validations.special)}
+                placeholder="••••••••"
               />
+														{ /* 비밀번호 인디케이터 UI */ }
+														<div className="grid grid-cols-2 gap-x-2 gap-y-2 mt-3 px-1">
+															<ValidationItem isValid={validations.length} text="8자 이상" isDirty={password.length > 0} />
+															<ValidationItem isValid={validations.upper} text="대문자 포함" isDirty={password.length > 0} />
+															<ValidationItem isValid={validations.number} text="숫자 포함" isDirty={password.length > 0} /> 
+															<ValidationItem isValid={validations.special} text="특수문자 포함" isDirty={password.length > 0} /> 
             </div>
+										</div>
             <div>
-              <label className={`block text-sm font-bold mb-2 ml-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>개인 도메인</label>
-              <div className="flex items-center">
+													<label className={`block text-sm font-bold mb-2 ml-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>비밀번호 확인</label>
                 <input 
-                  type="text" 
-                  value={subdomain}
-                  onChange={(e) => setSubdomain(e.target.value)}
-                  className={`flex-1 p-3 rounded-l-xl border border-r-0 focus:outline-none focus:ring-2 transition-all ${inputClass}`}
-                  placeholder="my-domain"
+                  type="password" 
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+																			className={getInputBorderClass(confirmPassword, validations.match)}
+                  placeholder="••••••••"
                 />
-                <span className={`p-3 rounded-r-xl font-bold border border-l-0 ${isDarkMode ? 'bg-slate-700 border-slate-700 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
-                  .oneresume.com
+																<div className="mt-2 mt-1">
+																	<ValidationItem isValid={validations.match} text="비밀번호 일치" isDirty={confirmPassword.length > 0} />
+																	</div>
+															</div>
+													<div>
+														<label className={`block text-sm font-bold mb-2 ml-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>개인 도메인</label>
+														<div className="flex items-center">
+															<input
+															type="text"
+															value={subdomain}
+															onChange={(e) => setSubdomain(e.target.value)}
+															className={`flex-1 p-3 rounded-l-xl border border-r-0 focus:outline-none focus:ring-2 transition-all ${inputClass}`}
+															placeholder="my-domain"
+															/>
+															<span className={`p-3 rounded-r-xl font-bold border border-l-0 ${isDarkMode ? 'bg-slate-700 border-slate-700 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+																.oneresume.com
                 </span>
               </div>
             </div>
-            <button onClick={handleFinalSignup} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-black text-lg hover:bg-emerald-600 shadow-xl transition-all active:scale-95">
+            <button 
+												onClick={handleFinalSignup}
+												disabled={!Object.values(validations).every(v => v)} // 보안 미충족 시 비활성화
+												className={`w-full py-4 rounded-xl font-black text-lg shadow-xl transition-all active:scale-95 ${
+												Object.values(validations).every(v => v)
+												? 'bg-emerald-500 text-white hover:bg-emerald-600'
+												: 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-50'
+												}`}
+												>
               가입하고 시작하기
             </button>
           </div>
