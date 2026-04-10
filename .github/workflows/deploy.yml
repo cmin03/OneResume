@@ -42,7 +42,12 @@ jobs:
             
             # Prisma 세팅 및 서버 재시작
             npx prisma generate
-            pm2 reload all || pm2 start index.js --name "oneresume-api"
+            
+            # 기존 프로세스 정리 후 확실하게 다시 시작 (restart)
+            pm2 restart all || pm2 start index.js --name "oneresume-api"
+            
+            # 제대로 떴는지 로그만 확인 (5초만 보여주고 종료)
+            timeout 5s pm2 --lines 10 --no-daemon || true
 
       # 프론트엔드(S3) 배포 단계
       - name: Build and Deploy Frontend to S3
