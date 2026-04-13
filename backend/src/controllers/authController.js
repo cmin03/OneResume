@@ -71,6 +71,14 @@ exports.signup = async (req, res) => {
             return res.status(400).json({ message: "이메일 인증을 먼저 완료해주세요." });
         }
 
+        // 서브도메인 예약어(금지어) 차단 로직
+        const forbiddenWords = ['admin', 'api', 'www', 'mail', 'master', 'root', 'help', 'login', 'dev', 'test', 'support'];
+        if (forbiddenWords.includes(subdomain.toLowerCase())) {
+            return res.status(400).json({
+                message: `'${subdomain}'은(는) 시스템 예약어로 사용할 수 없습니다.`
+            });
+        }
+
         // 중복 체크
         const existingUser = await prisma.user.findFirst({
             where: { OR: [{ email }, { subdomain }] }
@@ -277,7 +285,9 @@ exports.setupProfile = async (req, res) => {
 
 		const updateData = {
 			username: username,
-			// Prisma 스키마 필드명에 맞춰 수정하세요 (예: age, phoneNumber 등)
+			age: age ? parseInt(age) : null,
+			phone: phone || null,
+			isProfileComplete: true, // 프로필 설정 완료!
 			updatedAt: new Date(),
 	};
 	// S3에 파일이 업로드되었다면 URL 저장
@@ -316,18 +326,8 @@ exports.getMe = async (req, res) => {
 
         if (!user) return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
 
-        res.status(200).json({
-            user: { 
-                email: user.email, 
-                subdomain: user.subdomain, 
-                username: user.username,
-                bio: user.bio,
-                profileImageUrl: user.profileImageUrl,
-                githubUrl: user.githubUrl,
-                blogUrl: user.blogUrl,
-                resumes: user.resumes
-            }
-        });
+        const { password: _, ...safeUser } = user;
+        res.status(200).json({ user: safeUser });
     } catch (error) {
         console.error("토큰 검증 에러:", error);
         res.status(403).json({ message: "유효하지 않거나 만료된 토큰입니다." });
