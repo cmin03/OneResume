@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import DaumPostcode from "react-daum-postcode";
+import toast from "react-hot-toast";
 
 const ResumeForm = ({
   formData,
@@ -7,259 +9,579 @@ const ResumeForm = ({
   handleProjectChange,
   addProject,
   removeProject,
+  handleWorkChange,
+  addWork,
+  removeWork,
+  handleCertChange,
+  addCert,
+  removeCert,
   handleSubmit,
   handleGithubSync,
   handleDragEnd,
   handleImageUpload,
-  isDarkMode
+  auditContent,
+  isDarkMode,
+  isCompact = false,
+  paneWidth = 600
 }) => {
-  // 현재 활성화된 탭 상태 (기본값: 'basic')
   const [activeTab, setActiveTab] = useState('basic');
+  const [isAddressOpen, setIsAddressOpen] = useState(false);
+  const [schoolResults, setSchoolResults] = useState([]);
+  const [majorResults, setMajorResults] = useState([]);
+  const [showSchoolList, setShowSchoolList] = useState(false);
+  const [showMajorList, setShowMajorList] = useState(false);
 
+  const [aiFeedback, setAiFeedback] = useState(null);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+
+  // theme settings
   const theme = {
-    formBg: isDarkMode ? "bg-zinc-800 border-zinc-700" : "bg-white border-zinc-100",
-    tabActive: isDarkMode ? "bg-blue-600 text-white" : "bg-blue-600 text-white",
-    tabInactive: isDarkMode ? "text-zinc-400 hover:bg-zinc-700" : "text-zinc-500 hover:bg-gray-100",
+    formBg: isDarkMode ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200",
+    tabActive: "text-white",
+    tabInactive: isDarkMode ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-500 hover:text-zinc-700",
     titleText: isDarkMode ? "text-zinc-100" : "text-zinc-800",
-    labelText: isDarkMode ? "text-zinc-400" : "text-zinc-600",
-    inputBg: isDarkMode ? "bg-zinc-700 border-zinc-600 text-zinc-100 focus:ring-blue-500" : "bg-gray-100 border-transparent text-zinc-900 focus:ring-blue-500",
-    cardBg: isDarkMode ? "bg-zinc-700/50 border-zinc-600" : "bg-gray-50 border-zinc-200",
-    innerInputBg: isDarkMode ? "bg-zinc-800 border-zinc-600 text-zinc-100 focus:ring-blue-500" : "bg-white border-zinc-200 text-zinc-900 focus:ring-blue-500",
+    labelText: isDarkMode ? "text-zinc-300" : "text-zinc-600",
+    subText: isDarkMode ? "text-zinc-400" : "text-zinc-500",
+    cardBg: isDarkMode ? "bg-zinc-800/40 border-zinc-800" : "bg-gray-50/50 border-gray-200/60",
+    innerInputBg: isDarkMode ? "bg-zinc-900 border-zinc-700 text-zinc-100 focus:border-blue-500" : "bg-white border-gray-200 text-zinc-900 focus:border-blue-500",
   };
 
   const tabs = [
-    { id: 'basic', label: ' 기본 정보', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
-    { id: 'links', label: ' 링크/연동', icon: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' },
-    { id: 'edu', label: ' 학력/기술', icon: 'M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-5.824-2.998 12.078 12.078 0 01.665-6.479L12 14z' },
-    { id: 'projects', label: ' 프로젝트', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+    { id: 'basic', label: '인적사항', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
+    { id: 'links', label: '브랜딩/연동', icon: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' },
+    { id: 'edu', label: '학력/기술', icon: 'M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-5.824-2.998 12.078 12.078 0 01.665-6.479L12 14z' },
+    { id: 'experience', label: '경력', icon: 'M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
+    { id: 'certs', label: '자격/수상', icon: 'M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z' },
+    { id: 'projects', label: '프로젝트', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+    { id: 'extra', label: '자기소개서', icon: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z' },
   ];
 
+  const activeIndex = tabs.findIndex(t => t.id === activeTab);
+
+  const searchSchool = async (keyword) => {
+    if (!keyword || keyword.length < 2) return;
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/resume/search?type=SCHOOL&keyword=${encodeURIComponent(keyword)}`);
+      const data = await response.json();
+      setSchoolResults(data.dataSearch?.content || []);
+      setShowSchoolList(true);
+    } catch (e) {}
+  };
+
+  const searchMajor = async (keyword) => {
+    if (!keyword || keyword.length < 2) return;
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/resume/search?type=MAJOR&keyword=${encodeURIComponent(keyword)}`);
+      const data = await response.json();
+      setMajorResults(data.dataSearch?.content || []);
+      setShowMajorList(true);
+    } catch (e) {}
+  };
+
+  const handleAiAudit = async (fieldName, content, context) => {
+    if (!content || content.trim().length < 5) {
+      toast.error("분석할 내용이 너무 짧습니다. (최소 5자 이상)");
+      return;
+    }
+
+    const loadingToast = toast.loading("AI가 내용을 분석하고 있습니다...");
+    setIsAiLoading(true);
+    try {
+      const result = await auditContent(fieldName, content, context);
+      if (result) {
+        setAiFeedback({ ...result, targetField: fieldName });
+        setIsAiModalOpen(true);
+        toast.success("분석이 완료되었습니다!", { id: loadingToast });
+      } else {
+        toast.error("AI 분석 중 오류가 발생했습니다.", { id: loadingToast });
+      }
+    } catch (e) {
+      toast.error("네트워크 오류가 발생했습니다.", { id: loadingToast });
+    }
+    setIsAiLoading(false);
+  };
+
+  const applyAiRefinement = (text) => {
+    if (aiFeedback.targetField === 'bio') handleChange({ target: { name: 'bio', value: text } });
+    else if (aiFeedback.targetField.startsWith('project-')) {
+      const index = parseInt(aiFeedback.targetField.split('-')[1]);
+      handleProjectChange(index, { target: { name: 'description', value: text } });
+    } else if (aiFeedback.targetField.startsWith('work-')) {
+      const index = parseInt(aiFeedback.targetField.split('-')[1]);
+      handleWorkChange(index, { target: { name: 'jobDescription', value: text } });
+    } else handleChange({ target: { name: aiFeedback.targetField, value: text } });
+    setIsAiModalOpen(false);
+    toast.success("문장이 성공적으로 반영되었습니다!");
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    toast.success("클립보드에 복사되었습니다!");
+  };
+
+  const handleRegenerate = () => {
+    // 현재 필드 정보와 내용을 바탕으로 다시 분석 실행
+    const fieldName = aiFeedback.targetField;
+    let content = "";
+    if (fieldName === 'bio') content = formData.bio;
+    else if (fieldName.startsWith('project-')) content = formData.projects[parseInt(fieldName.split('-')[1])].description;
+    else if (fieldName.startsWith('work-')) content = formData.workExperiences[parseInt(fieldName.split('-')[1])].jobDescription;
+    else content = formData[fieldName];
+    
+    handleAiAudit(fieldName, content);
+  };
+
+  // 텍스트 영역 자동 확장 핸들러
+  const autoExpand = (e) => {
+    const target = e.target || e;
+    target.style.height = 'auto';
+    target.style.height = target.scrollHeight + 'px';
+  };
+
+  // 탭이 바뀌거나 데이터가 변경되어 컴포넌트가 다시 그려질 때 높이 재계산
+  React.useEffect(() => {
+    const textareas = document.querySelectorAll('textarea');
+    textareas.forEach(ta => {
+      ta.style.height = 'auto';
+      ta.style.height = ta.scrollHeight + 'px';
+    });
+  }, [activeTab, formData]);
+
   return (
-    <div className={`w-full h-full flex flex-col rounded-[32px] overflow-hidden shadow-2xl border transition-all duration-300 ${theme.formBg}`}>
-      
-      {/* 1. 상단 탭 메뉴 */}
-      <div className="flex p-2 gap-1 border-b border-zinc-700/20 bg-zinc-500/5">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold transition-all ${
-              activeTab === tab.id ? theme.tabActive : theme.tabInactive
-            }`}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} />
-            </svg>
-            <span className="hidden md:inline">{tab.label}</span>
-          </button>
-        ))}
+    <div className={`w-full h-full min-h-0 flex flex-col rounded-[24px] overflow-hidden shadow-2xl border transition-all ${theme.formBg}`}>
+      {/* 슬라이딩 탭 헤더 */}
+      <div className="flex-none relative p-1.5 bg-zinc-500/5 border-b border-zinc-700/10">
+        <div className="flex flex-nowrap gap-1 relative z-10">
+          {tabs.map((tab, idx) => (
+            <button 
+              key={tab.id} 
+              onClick={() => setActiveTab(tab.id)} 
+              className={`flex-1 min-w-[95px] flex items-center justify-center gap-2 rounded-xl text-[12px] font-black transition-all duration-500 py-3.5 ${activeTab === tab.id ? theme.tabActive : theme.tabInactive}`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d={tab.icon} /></svg>
+              <span className="whitespace-nowrap">{tab.label}</span>
+            </button>
+          ))}
+        </div>
+        {/* 부드러운 슬라이딩 배경 (인디케이터) */}
+        <div 
+          className="absolute top-1.5 bottom-1.5 bg-blue-600 rounded-xl shadow-lg transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)]"
+          style={{
+            left: `calc(0.375rem + ${activeIndex} * (100% - 0.75rem) / ${tabs.length})`,
+            width: `calc((100% - 0.75rem) / ${tabs.length})`
+          }}
+        />
       </div>
 
-      {/* 2. 가변 입력 영역 (각 탭별 컨텐츠) */}
-      <div className="flex-1 overflow-y-auto p-8 lg:p-10 custom-scrollbar">
-        
-        {activeTab === 'basic' && (
-          <div className="space-y-8 animate-fade-in">
-            <div className="flex flex-col items-center">
-              <div className={`w-36 h-36 rounded-full overflow-hidden border-4 shadow-inner flex items-center justify-center mb-5 transition-colors ${isDarkMode ? 'bg-zinc-700 border-zinc-600' : 'bg-gray-100 border-white'}`}>
-                {formData.profileImageUrl ? (
-                  <img src={formData.profileImageUrl} alt="프로필" className="w-full h-full object-cover" />
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                )}
-              </div>
-              <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full shadow-lg text-xs font-bold active:scale-95 transition-all">
-                프로필 사진 선택
-                <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-              </label>
-            </div>
-
-            <div className="grid grid-cols-12 gap-6">
-              <div className="col-span-4 flex flex-col gap-2">
-                <label className={`pl-1 text-xs font-bold uppercase tracking-widest ${theme.labelText}`}>이름</label>
-                <input type="text" name="username" value={formData.username} onChange={handleChange} className={`w-full px-5 py-3.5 rounded-2xl border-2 outline-none transition-all focus:ring-2 ${theme.inputBg}`} />
-              </div>
-              <div className="col-span-3 flex flex-col gap-2">
-                <label className={`pl-1 text-xs font-bold uppercase tracking-widest ${theme.labelText}`}>성별</label>
-                <div className={`relative flex p-1 rounded-2xl border-2 transition-all ${theme.inputBg} h-[53.6px]`}>
-                  {/* 슬라이딩 배경 알약 */}
-                  <div 
-                    className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] shadow-md ${
-                      formData.gender === 'male' 
-                        ? 'left-1 bg-blue-600' 
-                        : (formData.gender === 'female' ? 'left-[calc(50%)] bg-pink-500' : 'opacity-0')
-                    }`}
-                  />
-                  
-                  <button
-                    type="button"
-                    onClick={() => handleChange({ target: { name: 'gender', value: 'male' } })}
-                    className={`relative z-10 flex-1 flex items-center justify-center text-sm font-bold transition-colors duration-300 ${
-                      formData.gender === 'male' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'
-                    }`}
-                  >
-                    남
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleChange({ target: { name: 'gender', value: 'female' } })}
-                    className={`relative z-10 flex-1 flex items-center justify-center text-sm font-bold transition-colors duration-300 ${
-                      formData.gender === 'female' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'
-                    }`}
-                  >
-                    여
-                  </button>
-                </div>
-              </div>
-              <div className="col-span-5 flex flex-col gap-2">
-                <label className={`pl-1 text-xs font-bold uppercase tracking-widest ${theme.labelText}`}>이메일</label>
-                <input type="email" name="email" value={formData.email} onChange={handleChange} className={`w-full px-5 py-3.5 rounded-2xl border-2 outline-none transition-all focus:ring-2 ${theme.inputBg}`} />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-6">
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between pl-1">
-                  <label className={`text-xs font-bold uppercase tracking-widest ${theme.labelText}`}>나이</label>
-                  <label className="flex items-center gap-1.5 cursor-pointer group">
-                    <input 
-                      type="checkbox" 
-                      name="useInternationalAge" 
-                      checked={formData.useInternationalAge || false} 
-                      onChange={handleChange} 
-                      className="w-3.5 h-3.5 rounded border-zinc-600 bg-zinc-700 text-blue-600 focus:ring-offset-zinc-800 transition-all"
-                    />
-                    <span className={`text-[10px] font-bold ${isDarkMode ? 'text-zinc-500 group-hover:text-zinc-300' : 'text-zinc-400 group-hover:text-zinc-600'} transition-colors`}>만 나이 표시</span>
-                  </label>
-                </div>
-                <input type="number" name="age" value={formData.age} onChange={handleChange} placeholder="숫자만 입력" className={`w-full px-5 py-3.5 rounded-2xl border-2 outline-none transition-all focus:ring-2 ${theme.inputBg}`} />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className={`pl-1 text-xs font-bold uppercase tracking-widest ${theme.labelText}`}>전화번호</label>
-                <input type="text" name="phone" value={formData.phone} onChange={handleChange} placeholder="010-0000-0000" className={`w-full px-5 py-3.5 rounded-2xl border-2 outline-none transition-all focus:ring-2 ${theme.inputBg}`} />
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className={`pl-1 text-xs font-bold uppercase tracking-widest ${theme.labelText}`}>서브도메인</label>
-              <div className="flex items-center">
-                <input type="text" name="subdomain" value={formData.subdomain} onChange={handleChange} className={`flex-1 px-5 py-3.5 border-2 rounded-l-2xl outline-none transition-all focus:ring-2 border-r-0 ${theme.inputBg}`} />
-                <span className={`px-5 py-3.5 rounded-r-2xl font-bold text-sm border-2 border-l-0 ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-400' : 'bg-gray-200 border-transparent text-zinc-500'}`}>.oneresume.com</span>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className={`pl-1 text-xs font-bold uppercase tracking-widest ${theme.labelText}`}>한 줄 소개</label>
-              <textarea name="bio" value={formData.bio} onChange={handleChange} rows="3" placeholder="나를 가장 잘 표현하는 문장을 적어주세요." className={`w-full px-5 py-3.5 border-2 rounded-2xl outline-none transition-all focus:ring-2 resize-none ${theme.inputBg}`} />
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'links' && (
-          <div className="space-y-8 animate-fade-in">
-            <div className="flex flex-col gap-2">
-              <label className={`pl-1 text-xs font-bold uppercase tracking-widest ${theme.labelText}`}>GitHub 연동</label>
-              <div className="flex gap-3">
-                <input type="text" name="githubUrl" value={formData.githubUrl} onChange={handleChange} placeholder="GitHub URL 또는 아이디" className={`flex-1 px-5 py-3.5 border-2 rounded-2xl outline-none transition-all focus:ring-2 ${theme.inputBg}`} />
-                {formData.githubUrl && (
-                  <button type="button" onClick={handleGithubSync} className="bg-zinc-800 dark:bg-blue-600 text-white font-bold px-8 py-3.5 rounded-2xl transition-all shadow-lg active:scale-95">동기화</button>
-                )}
-              </div>
-              <p className="text-[10px] text-zinc-500 ml-1">레포지토리 목록과 기술 스택을 자동으로 가져옵니다.</p>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className={`pl-1 text-xs font-bold uppercase tracking-widest ${theme.labelText}`}>기술 블로그</label>
-              <input type="text" name="blogUrl" value={formData.blogUrl} onChange={handleChange} placeholder="https://velog.io/@username" className={`w-full px-5 py-3.5 border-2 rounded-2xl outline-none transition-all focus:ring-2 ${theme.inputBg}`} />
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'edu' && (
-          <div className="space-y-8 animate-fade-in">
-            <div className="grid grid-cols-2 gap-6">
-              <div className="flex flex-col gap-2">
-                <label className={`pl-1 text-xs font-bold uppercase tracking-widest ${theme.labelText}`}>학교</label>
-                <input type="text" name="school" value={formData.school} onChange={handleChange} className={`w-full px-5 py-3.5 border-2 rounded-2xl outline-none transition-all focus:ring-2 ${theme.inputBg}`} />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className={`pl-1 text-xs font-bold uppercase tracking-widest ${theme.labelText}`}>전공</label>
-                <input type="text" name="major" value={formData.major} onChange={handleChange} className={`w-full px-5 py-3.5 border-2 rounded-2xl outline-none transition-all focus:ring-2 ${theme.inputBg}`} />
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className={`pl-1 text-xs font-bold uppercase tracking-widest ${theme.labelText}`}>학점 (GPA)</label>
-              <input type="text" name="gpa" value={formData.gpa} onChange={handleChange} placeholder="4.5 / 4.5" className={`w-full px-5 py-3.5 border-2 rounded-2xl outline-none transition-all focus:ring-2 ${theme.inputBg}`} />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className={`pl-1 text-xs font-bold uppercase tracking-widest ${theme.labelText}`}>핵심 기술 스택</label>
-              <input type="text" name="skills" value={formData.skills} onChange={handleChange} placeholder="React, Node.js, TypeScript (쉼표로 구분)" className={`w-full px-5 py-3.5 border-2 rounded-2xl outline-none transition-all focus:ring-2 ${theme.inputBg}`} />
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'projects' && (
-          <div className="space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between mb-2 px-1">
-              <h3 className={`text-sm font-bold uppercase tracking-widest ${theme.labelText}`}>프로젝트 목록 ({formData.projects.length})</h3>
-              <button type="button" onClick={addProject} className="text-blue-500 text-xs font-black hover:underline">+ 항목 추가</button>
-            </div>
-            
-            <DragDropContext onDragEnd={handleDragEnd}>
-              <Droppable droppableId="projects-list">
-                {(provided) => (
-                  <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-5">
-                    {formData.projects.map((project, index) => {
-                      const draggableId = project.id ? String(project.id) : `fallback-${index}`;
-                      return (
-                        <Draggable key={draggableId} draggableId={draggableId} index={index}>
-                          {(provided, snapshot) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              className={`p-6 rounded-3xl border-2 transition-all ${
-                                snapshot.isDragging ? "shadow-2xl scale-[1.02] border-blue-500 bg-white dark:bg-zinc-700" : theme.cardBg
-                              }`}
-                            >
-                              <div {...provided.dragHandleProps} className="flex justify-center mb-4 cursor-grab active:cursor-grabbing opacity-30 hover:opacity-100 transition-opacity">
-                                <div className="w-10 h-1 bg-zinc-400 rounded-full"></div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-4 mb-4">
-                                <input type="text" name="name" value={project.name} onChange={(e) => handleProjectChange(index, e)} placeholder="프로젝트 이름" className={`w-full px-4 py-2.5 border rounded-xl outline-none transition-all focus:ring-2 text-sm ${theme.innerInputBg}`} />
-                                <input type="text" name="period" value={project.period} onChange={(e) => handleProjectChange(index, e)} placeholder="2023.01 ~ 2023.06" className={`w-full px-4 py-2.5 border rounded-xl outline-none transition-all focus:ring-2 text-sm ${theme.innerInputBg}`} />
-                              </div>
-                              <input type="text" name="techStack" value={project.techStack} onChange={(e) => handleProjectChange(index, e)} placeholder="사용 기술 (Tech Stack)" className={`w-full px-4 py-2.5 border rounded-xl outline-none transition-all focus:ring-2 text-sm mb-4 ${theme.innerInputBg}`} />
-                              <textarea name="description" value={project.description} onChange={(e) => handleProjectChange(index, e)} rows="3" placeholder="상세 설명을 적어주세요." className={`w-full px-4 py-2.5 border rounded-xl outline-none transition-all focus:ring-2 text-sm resize-none ${theme.innerInputBg}`} />
-                              <div className="flex justify-end mt-3">
-                                <button type="button" onClick={() => removeProject(index)} className="text-red-500 text-[10px] font-bold uppercase tracking-tighter opacity-60 hover:opacity-100">✕ Remove</button>
-                              </div>
-                            </div>
-                          )}
-                        </Draggable>
-                      );
-                    })}
-                    {provided.placeholder}
+      {/* 본문 영역 */}
+      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 lg:p-8">
+        <div className="max-w-[1400px] mx-auto space-y-8">
+          {activeTab === 'basic' && (
+            <div className="space-y-8 animate-fade-in">
+              <div className={`p-6 lg:p-8 rounded-[32px] border ${theme.cardBg} transition-all`}>
+                <div className="flex flex-col md:flex-row gap-10 items-start">
+                  <div className="shrink-0 mx-auto md:mx-0 text-center group">
+                    <div className="w-[120px] h-[160px] rounded-2xl overflow-hidden border-2 shadow-xl bg-white dark:bg-zinc-900 border-white dark:border-zinc-700 relative">
+                      {formData.profileImageUrl ? 
+                        <img src={formData.profileImageUrl} alt="프로필" className="w-full h-full object-cover" /> : 
+                        <div className="w-full h-full flex items-center justify-center text-zinc-300"><svg className="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg></div>
+                      }
+                    </div>
+                    <label className="mt-4 inline-block cursor-pointer px-4 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/30 transition-colors hover:bg-blue-100 dark:hover:bg-blue-900/50">
+                      <span className="text-[11px] font-black uppercase text-blue-600 dark:text-blue-400">사진 변경</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                    </label>
                   </div>
-                )}
-              </Droppable>
-            </DragDropContext>
-          </div>
-        )}
+
+                  <div className="flex-1 w-full grid gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                      <div className="flex flex-col gap-2">
+                        <label className={`pl-1 text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>이름 *</label>
+                        <input type="text" name="username" value={formData.username || ""} onChange={handleChange} placeholder="홍길동" className={`w-full px-4 py-3 rounded-xl border outline-none transition-all ${theme.innerInputBg}`} />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label className={`pl-1 text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>성별</label>
+                        <div className={`relative flex p-1 rounded-xl border ${theme.innerInputBg} h-[48px]`}>
+                          <div className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-lg transition-all duration-500 shadow-sm ${formData.gender === 'male' ? 'left-1 bg-blue-600' : (formData.gender === 'female' ? 'left-[calc(50%)] bg-pink-500' : 'opacity-0')}`} />
+                          <button type="button" onClick={() => handleChange({ target: { name: 'gender', value: 'male' } })} className={`relative z-10 flex-1 flex items-center justify-center text-[11px] font-black ${formData.gender === 'male' ? 'text-white' : 'text-zinc-500'}`}>남성</button>
+                          <button type="button" onClick={() => handleChange({ target: { name: 'gender', value: 'female' } })} className={`relative z-10 flex-1 flex items-center justify-center text-[11px] font-black ${formData.gender === 'female' ? 'text-white' : 'text-zinc-500'}`}>여성</button>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center justify-between pl-1">
+                          <label className={`text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>나이</label>
+                          <label className="flex items-center gap-2 cursor-pointer group">
+                            <input 
+                              type="checkbox" 
+                              name="useInternationalAge" 
+                              checked={formData.useInternationalAge || false} 
+                              onChange={handleChange} 
+                              className="sr-only peer" 
+                            />
+                            <div className={`w-4.5 h-4.5 rounded-md border-2 transition-all duration-200 flex items-center justify-center ${isDarkMode ? 'bg-zinc-800 border-zinc-700 peer-checked:bg-blue-600 peer-checked:border-blue-600' : 'bg-white border-zinc-300 peer-checked:bg-blue-600 peer-checked:border-blue-600'}`}>
+                              <svg className={`w-3 h-3 text-white transition-transform duration-200 ${formData.useInternationalAge ? 'scale-100' : 'scale-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="4">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                            <span className={`text-[11px] font-black transition-colors ${isDarkMode ? 'text-zinc-300 group-hover:text-zinc-100' : 'text-zinc-500 group-hover:text-zinc-700'}`}>만 나이</span>
+                          </label>
+                        </div>
+                        <input type="number" name="age" value={formData.age || ""} onChange={handleChange} placeholder="숫자" className={`w-full px-4 py-3 rounded-xl border outline-none transition-all ${theme.innerInputBg}`} />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      <div className="flex flex-col gap-2">
+                        <label className={`pl-1 text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>전화번호</label>
+                        <input type="text" name="phone" value={formData.phone || ""} onChange={handleChange} placeholder="010-0000-0000" className={`w-full px-4 py-3 rounded-xl border outline-none transition-all ${theme.innerInputBg}`} />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label className={`pl-1 text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>이메일</label>
+                        <input type="email" name="email" value={formData.email || ""} onChange={handleChange} placeholder="example@email.com" className={`w-full px-4 py-3 rounded-xl border outline-none transition-all ${theme.innerInputBg}`} />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 pt-2">
+                      <div className="flex justify-between items-center pl-1">
+                        <label className={`text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>한 줄 소개</label>
+                        <button type="button" onClick={() => handleAiAudit('bio', formData.bio)} className="text-[10px] font-black text-blue-600 dark:text-blue-400 hover:underline">AI 컨설팅</button>
+                      </div>
+                      <textarea 
+                        name="bio" 
+                        value={formData.bio || ""} 
+                        onChange={handleChange} 
+                        onInput={autoExpand}
+                        rows="1" 
+                        placeholder="나를 표현하는 핵심 문장" 
+                        className={`w-full px-4 py-3 rounded-xl border outline-none resize-none transition-all ${theme.innerInputBg} leading-relaxed min-h-[48px] overflow-hidden`} 
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-6">
+                <div className={`p-6 lg:p-8 rounded-[32px] border ${theme.cardBg} space-y-5`}>
+                  <div className="flex items-center gap-2 mb-2"><div className="w-1.5 h-4 bg-blue-600 rounded-full" /><label className={`text-[13px] font-black uppercase tracking-widest ${theme.labelText}`}>거주지 정보</label></div>
+                  <div className="flex gap-3">
+                    <input type="text" value={formData.address || ""} readOnly onClick={() => setIsAddressOpen(true)} placeholder="주소 검색" className={`flex-1 px-4 py-3 rounded-xl border outline-none transition-all ${theme.innerInputBg} cursor-pointer`} />
+                    <button 
+                      type="button" 
+                      onClick={() => setIsAddressOpen(true)} 
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-black px-8 rounded-xl text-xs shadow-lg shadow-blue-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                    >
+                      주소 검색
+                    </button>
+                  </div>
+                  <input type="text" name="addressDetail" value={formData.addressDetail || ""} onChange={handleChange} placeholder="상세주소 입력" className={`w-full px-4 py-3 rounded-xl border outline-none transition-all ${theme.innerInputBg}`} />
+                </div>
+
+                <div className={`p-6 lg:p-8 rounded-[32px] border ${theme.cardBg} space-y-5`}>
+                  <div className="flex items-center gap-2 mb-2"><div className="w-1.5 h-4 bg-blue-600 rounded-full" /><label className={`text-[13px] font-black uppercase tracking-widest ${theme.labelText}`}>병역 사항</label></div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="flex flex-col gap-2"><label className={`pl-1 text-[11px] font-black uppercase ${theme.subText}`}>군필 여부</label><select name="militaryStatus" value={formData.militaryStatus || ""} onChange={handleChange} className={`w-full px-4 py-3 rounded-xl border outline-none transition-all ${theme.innerInputBg} font-bold`}><option value="">선택 안함</option><option value="군필">군필</option><option value="미필">미필</option><option value="면제">면제</option><option value="해당없음">해당없음</option></select></div>
+                    <div className="flex flex-col gap-2"><label className={`pl-1 text-[11px] font-black uppercase ${theme.subText}`}>군별 / 계급</label><input type="text" name="militaryClass" value={formData.militaryClass || ""} onChange={handleChange} placeholder="육군 / 병장" className={`w-full px-4 py-3 rounded-xl border outline-none transition-all ${theme.innerInputBg}`} /></div>
+                  </div>
+                  <div className="flex flex-col gap-2"><label className={`pl-1 text-[11px] font-black uppercase ${theme.subText}`}>복무 기간</label><input type="text" name="militaryPeriod" value={formData.militaryPeriod || ""} onChange={handleChange} placeholder="YYYY.MM ~ YYYY.MM" className={`w-full px-4 py-3 rounded-xl border outline-none transition-all ${theme.innerInputBg}`} /></div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'links' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className={`p-6 lg:p-8 rounded-[32px] border ${theme.cardBg} space-y-6`}>
+                <div className="flex items-center gap-2 mb-2"><div className="w-1.5 h-4 bg-blue-600 rounded-full" /><h4 className={`text-[13px] font-black uppercase tracking-widest ${theme.labelText}`}>개인 브랜딩</h4></div>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between pl-1">
+                    <div className="flex items-center gap-2">
+                      <label className={`text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>서브도메인</label>
+                      <div className="group relative">
+                        <svg className="w-4 h-4 text-zinc-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        {/* 말풍선 - 테마 연동 (라이트/다크) */}
+                        <div className={`absolute left-0 top-full mt-3 w-72 p-5 rounded-[24px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[100] shadow-2xl leading-relaxed border ${
+                          isDarkMode 
+                            ? 'bg-zinc-900 text-white border-white/10 shadow-blue-500/20' 
+                            : 'bg-white text-zinc-800 border-zinc-200 shadow-zinc-400/20'
+                        }`}>
+                          {/* 화살표 촉 */}
+                          <div className={`absolute -top-1.5 left-4 w-3 h-3 rotate-45 border-t border-l ${
+                            isDarkMode ? 'bg-zinc-900 border-white/10' : 'bg-white border-zinc-200'
+                          }`}></div>
+                          
+                          <div className="flex items-center gap-2 mb-2 text-blue-500 font-black text-[12px] relative z-10">
+                            <span>🌐</span>
+                            <span>나만의 이력서 주소 설정</span>
+                          </div>
+                          <p className={`font-medium mb-3 relative z-10 ${isDarkMode ? 'text-zinc-300' : 'text-zinc-600'}`}>
+                            인사담당자나 친구들에게 공유할 <span className={`font-bold underline decoration-blue-500 ${isDarkMode ? 'text-white' : 'text-zinc-900'}`}>웹사이트 주소</span>를 직접 정할 수 있어요.
+                          </p>
+                          <div className={`p-3 rounded-xl border relative z-10 ${isDarkMode ? 'bg-white/5 border-white/5' : 'bg-zinc-50 border-zinc-100'}`}>
+                            <p className={`text-[11px] mb-1 font-bold italic ${isDarkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>설정 예시:</p>
+                            <p className="text-[12px] font-black tracking-tight">
+                              아이디에 <span className="text-blue-500">"dev-hong"</span> 입력 시<br/>
+                              <span className="text-blue-500 underline">https://dev-hong.oneresume.com</span>
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center">
+                    <input type="text" name="subdomain" value={formData.subdomain || ""} onChange={handleChange} placeholder="your-id" className={`flex-1 px-4 py-3 border rounded-l-xl outline-none border-r-0 ${theme.innerInputBg} font-black text-base`} />
+                    <span className={`px-5 py-3 font-black text-[13px] border border-l-0 rounded-r-xl ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-zinc-400' : 'bg-gray-100 border-gray-200 text-zinc-500'}`}>.oneresume.com</span>
+                  </div>
+                  <div className="pl-1 flex flex-col gap-1.5 pt-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[12px] font-bold ${theme.subText}`}>접속 주소 미리보기:</span>
+                      <span className="text-[13px] font-black text-blue-500 underline underline-offset-4 tracking-tight">
+                        https://{formData.subdomain || "your-id"}.oneresume.com
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className={`p-6 lg:p-8 rounded-[32px] border ${theme.cardBg} space-y-8`}>
+                <div className="flex items-center gap-2 mb-2"><div className="w-1.5 h-4 bg-blue-600 rounded-full" /><h4 className={`text-[13px] font-black uppercase tracking-widest ${theme.labelText}`}>외부 링크 연동</h4></div>
+                <div className="flex flex-col gap-3"><label className={`pl-1 text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>GitHub 주소</label><div className="flex gap-3"><input type="text" name="githubUrl" value={formData.githubUrl || ""} onChange={handleChange} placeholder="https://github.com/your-id" className={`flex-1 px-4 py-3 rounded-xl border outline-none transition-all ${theme.innerInputBg}`} />{formData.githubUrl && <button type="button" onClick={handleGithubSync} className="bg-zinc-900 dark:bg-blue-600 text-white font-black px-6 rounded-xl text-xs hover:scale-[1.02] active:scale-[0.98] transition-all">동기화</button>}</div></div>
+                <div className="flex flex-col gap-3"><label className={`pl-1 text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>기술 블로그</label><input type="text" name="blogUrl" value={formData.blogUrl || ""} onChange={handleChange} placeholder="https://velog.io/@your-id" className={`w-full px-4 py-3 rounded-xl border outline-none transition-all ${theme.innerInputBg}`} /></div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'edu' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+              <div className={`p-6 lg:p-8 rounded-[32px] border ${theme.cardBg} space-y-6`}>
+                <h4 className={`text-[13px] font-black uppercase tracking-widest ${theme.labelText} mb-2`}>학력 사항</h4>
+                <div className="relative flex flex-col gap-2"><label className={`pl-1 text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>학교명</label><input type="text" name="school" value={formData.school || ""} onChange={(e) => { handleChange(e); searchSchool(e.target.value); }} onFocus={() => (formData?.school || "").length >= 2 && setShowSchoolList(true)} onBlur={() => setTimeout(() => setShowSchoolList(false), 200)} autoComplete="off" placeholder="학교명 입력 (2자 이상)" className={`w-full px-4 py-3 rounded-xl border outline-none transition-all ${theme.innerInputBg}`} />
+                  {showSchoolList && (
+                    <div className={`absolute top-[calc(100%+8px)] left-0 right-0 z-50 max-h-60 overflow-y-auto rounded-2xl border-2 shadow-2xl ${isDarkMode ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-100'}`}>
+                      {schoolResults.length > 0 ? schoolResults.map((item, idx) => (
+                        <div key={idx} onClick={() => { handleChange({ target: { name: 'school', value: item.schoolName } }); setShowSchoolList(false); }} 
+                          className={`px-5 py-3 cursor-pointer border-b last:border-0 transition-colors ${isDarkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-zinc-50 hover:bg-blue-50'}`}
+                        >
+                          <div className={`font-black text-[14px] ${isDarkMode ? 'text-white' : 'text-zinc-800'}`}>{item.schoolName}</div>
+                          <div className={`text-[11px] mt-0.5 ${isDarkMode ? 'text-zinc-400' : 'text-zinc-500 opacity-70'}`}>{item.region} | {item.campusName}</div>
+                        </div>
+                      )) : <div className={`p-5 text-center text-xs font-bold ${isDarkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>결과가 없습니다.</div>}
+                    </div>
+                  )}
+                  </div>
+                  <div className="relative flex flex-col gap-2">
+                  <label className={`pl-1 text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>전공명</label>
+                  <input type="text" name="major" value={formData.major || ""} onChange={(e) => { handleChange(e); searchMajor(e.target.value); }} onFocus={() => (formData?.major || "").length >= 2 && setShowMajorList(true)} onBlur={() => setTimeout(() => setShowMajorList(false), 200)} autoComplete="off" placeholder="전공명 입력" className={`w-full px-4 py-3 rounded-xl border outline-none transition-all ${theme.innerInputBg}`} />
+                  {showMajorList && (
+                    <div className={`absolute top-[calc(100%+8px)] left-0 right-0 z-50 max-h-60 overflow-y-auto rounded-2xl border-2 shadow-2xl ${isDarkMode ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-100'}`}>
+                      {(() => {
+                        // majorName이 가장 표준적인 필드명임
+                        const processed = majorResults
+                          .map(item => ({ ...item, displayName: item.majorName || item.mClass || item.facilName || "" }))
+                          .filter(item => item.displayName !== "");
+                        
+                        if (processed.length > 0) {
+                          return processed.map((item, idx) => (
+                            <div key={idx} onClick={() => { handleChange({ target: { name: 'major', value: item.displayName } }); setShowMajorList(false); }} 
+                              className={`px-5 py-4 font-black cursor-pointer border-b last:border-0 transition-colors ${isDarkMode ? 'text-white border-zinc-800 hover:bg-zinc-800' : 'text-zinc-800 border-zinc-50 hover:bg-blue-50'}`}
+                            >
+                              {item.displayName}
+                            </div>
+                          ));
+                        }
+                        return <div className={`p-5 text-center text-xs font-bold ${isDarkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>결과가 없습니다.</div>;
+                      })()}
+                    </div>
+                  )}
+                  </div>
+                <div className="flex flex-col gap-2"><label className={`pl-1 text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>학점 (GPA)</label><input type="text" name="gpa" value={formData.gpa || ""} onChange={handleChange} placeholder="4.5 / 4.5" className={`w-full px-4 py-3 rounded-xl border transition-all ${theme.innerInputBg}`} /></div>
+              </div>
+              <div className={`p-6 lg:p-8 rounded-[32px] border ${theme.cardBg} flex flex-col`}><h4 className={`text-[13px] font-black uppercase tracking-widest ${theme.labelText} mb-4`}>보유 기술</h4><textarea name="skills" value={formData.skills || ""} onChange={handleChange} onInput={autoExpand} rows="8" placeholder="기술을 콤마(,)로 구분 (예: React, TypeScript)" className={`flex-1 w-full px-4 py-4 rounded-xl border outline-none transition-all ${theme.innerInputBg} resize-none leading-relaxed min-h-[200px]`} /></div>
+            </div>
+          )}
+
+          {activeTab === 'experience' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className={`p-5 rounded-[24px] border ${theme.cardBg} flex items-center justify-between shadow-sm`}><h4 className={`text-[14px] font-black ${theme.titleText}`}>경력 사항 ({formData.workExperiences.length})</h4><button type="button" onClick={addWork} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl text-xs font-black shadow-lg transition-all active:scale-95">+ 추가</button></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {formData.workExperiences.map((work, index) => (
+                  <div key={index} className={`p-6 lg:p-8 rounded-[32px] border ${theme.cardBg} relative group space-y-5 transition-all hover:border-blue-500/30`}><button type="button" onClick={() => removeWork(index)} className="absolute -right-2 -top-2 w-9 h-9 bg-red-500 text-white rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold shadow-xl z-10">✕</button>
+                    <div className="flex flex-col gap-2"><label className={`text-[11px] font-black uppercase ${theme.subText}`}>회사명</label><input type="text" name="companyName" value={work.companyName || ""} onChange={(e) => handleWorkChange(index, e)} className={`w-full px-4 py-3 rounded-xl border ${theme.innerInputBg}`} /></div>
+                    <div className="flex flex-col gap-2"><label className={`text-[11px] font-black uppercase ${theme.subText}`}>직위</label><input type="text" name="role" value={work.role || ""} onChange={(e) => handleWorkChange(index, e)} className={`w-full px-4 py-3 rounded-xl border ${theme.innerInputBg}`} /></div>
+                    <div className="flex flex-col gap-2"><label className={`text-[11px] font-black uppercase ${theme.subText}`}>기간</label><input type="text" name="period" value={work.period || ""} onChange={(e) => handleWorkChange(index, e)} className={`w-full px-4 py-3 rounded-xl border ${theme.innerInputBg}`} /></div>
+                    <div className="flex flex-col gap-2"><div className="flex justify-between"><label className={`text-[11px] font-black uppercase ${theme.subText}`}>업무 내용</label><button type="button" onClick={() => handleAiAudit(`work-${index}`, work.jobDescription)} className="text-[10px] text-blue-600 font-black hover:underline">AI 첨삭</button></div><textarea name="jobDescription" value={work.jobDescription || ""} onChange={(e) => handleWorkChange(index, e)} onInput={autoExpand} rows="4" className={`w-full px-4 py-3 rounded-xl border ${theme.innerInputBg} resize-none leading-relaxed text-[13px] min-h-[100px] overflow-hidden`} /></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'certs' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className={`p-5 rounded-[24px] border ${theme.cardBg} flex items-center justify-between shadow-sm`}><h4 className={`text-[14px] font-black ${theme.titleText}`}>자격 / 수상 ({formData.certifications.length})</h4><button type="button" onClick={addCert} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl text-xs font-black shadow-lg transition-all active:scale-95">+ 추가</button></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {formData.certifications.map((cert, index) => (
+                  <div key={index} className={`p-6 rounded-[28px] border ${theme.cardBg} relative group space-y-4 transition-all hover:border-blue-500/30`}><button type="button" onClick={() => removeCert(index)} className="absolute -right-2 -top-2 w-8 h-8 bg-red-500 text-white rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold shadow-lg z-10">✕</button>
+                    <div className="flex flex-col gap-1.5"><label className={`text-[10px] font-black uppercase ${theme.subText}`}>명칭</label><input type="text" name="name" value={cert.name || ""} onChange={(e) => handleCertChange(index, e)} className={`w-full px-4 py-2.5 rounded-lg border ${theme.innerInputBg} text-[13px] font-bold`} /></div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-1.5"><label className={`text-[10px] font-black uppercase ${theme.subText}`}>발급기관</label><input type="text" name="issuer" value={cert.issuer || ""} onChange={(e) => handleCertChange(index, e)} className={`w-full px-4 py-2.5 rounded-lg border ${theme.innerInputBg} text-[13px]`} /></div>
+                      <div className="flex flex-col gap-1.5"><label className={`text-[10px] font-black uppercase ${theme.subText}`}>취득일</label><input type="text" name="date" value={cert.date || ""} onChange={(e) => handleCertChange(index, e)} className={`w-full px-4 py-2.5 rounded-lg border ${theme.innerInputBg} text-[13px]`} /></div>
+                    </div>
+                    <div className="flex flex-col gap-1.5"><label className={`text-[10px] font-black uppercase ${theme.subText}`}>점수/등급</label><input type="text" name="score" value={cert.score || ""} onChange={(e) => handleCertChange(index, e)} className={`w-full px-4 py-2.5 rounded-lg border ${theme.innerInputBg} text-[13px]`} /></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'projects' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className={`p-5 rounded-[24px] border ${theme.cardBg} flex items-center justify-between shadow-sm`}><h4 className={`text-[14px] font-black ${theme.titleText}`}>프로젝트 ({formData.projects.length})</h4><button type="button" onClick={addProject} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl text-xs font-black shadow-lg transition-all active:scale-95">+ 추가</button></div>
+              <DragDropContext onDragEnd={handleDragEnd}><Droppable droppableId="projects">{(provided) => (<div {...provided.droppableProps} ref={provided.innerRef} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {formData.projects.map((project, index) => (
+                  <Draggable key={project.id} draggableId={String(project.id)} index={index}>{(provided, snapshot) => (
+                    <div ref={provided.innerRef} {...provided.draggableProps} className={`p-6 lg:p-8 rounded-[32px] border ${snapshot.isDragging ? 'shadow-2xl border-blue-500 scale-[1.01] bg-white dark:bg-zinc-800' : theme.cardBg} relative group transition-all`}><div {...provided.dragHandleProps} className="absolute left-1/2 -translate-x-1/2 top-3 w-12 h-1.5 bg-zinc-300 dark:bg-zinc-700 rounded-full cursor-grab active:cursor-grabbing hover:bg-blue-400 transition-colors" />
+                      <div className="space-y-5 mt-4">
+                        <div className="flex flex-col gap-2"><label className={`text-[11px] font-black uppercase ${theme.subText}`}>프로젝트명</label><input type="text" name="name" value={project.name || ""} onChange={(e) => handleProjectChange(index, e)} className={`w-full px-4 py-3 rounded-xl border ${theme.innerInputBg} font-black`} /></div>
+                        <div className="grid grid-cols-2 gap-4"><div className="flex flex-col gap-2"><label className={`text-[11px] font-black uppercase ${theme.subText}`}>기간</label><input type="text" name="period" value={project.period || ""} onChange={(e) => handleProjectChange(index, e)} className={`w-full px-4 py-3 rounded-xl border ${theme.innerInputBg}`} /></div><div className="flex flex-col gap-2"><label className={`text-[11px] font-black uppercase ${theme.subText}`}>역할</label><input type="text" name="role" value={project.role || ""} onChange={(e) => handleProjectChange(index, e)} className={`w-full px-4 py-3 rounded-xl border ${theme.innerInputBg}`} /></div></div>
+                        <div className="flex flex-col gap-2"><label className={`text-[11px] font-black uppercase ${theme.subText}`}>기술 스택</label><input type="text" name="techStack" value={project.techStack || ""} onChange={(e) => handleProjectChange(index, e)} className={`w-full px-4 py-3 rounded-xl border ${theme.innerInputBg}`} /></div>
+                        <div className="flex flex-col gap-2"><div className="flex justify-between items-center"><label className={`text-[11px] font-black uppercase ${theme.subText}`}>상세 성과</label><button type="button" onClick={() => handleAiAudit(`project-${index}`, project.description)} className="text-[10px] text-blue-600 font-black hover:underline">AI 분석</button></div><textarea name="description" value={project.description || ""} onChange={(e) => handleProjectChange(index, e)} onInput={autoExpand} rows="5" className={`w-full px-4 py-3 rounded-xl border ${theme.innerInputBg} resize-none leading-relaxed text-[13px] min-h-[120px] overflow-hidden`} /></div>
+                        <div className="flex justify-end"><button type="button" onClick={() => removeProject(index)} className="text-red-500 text-[10px] font-black hover:underline uppercase tracking-tight">프로젝트 삭제</button></div>
+                      </div>
+                    </div>)}
+                  </Draggable>))}
+                {provided.placeholder}</div>)}</Droppable></DragDropContext>
+            </div>
+          )}
+
+          {activeTab === 'extra' && (
+            <div className={`p-6 lg:p-8 rounded-[32px] border ${theme.cardBg} space-y-8 animate-fade-in`}>
+              <div className="flex flex-col gap-3 relative"><div className="flex justify-between items-center pl-1"><label className={`text-[13px] font-black uppercase tracking-wider ${theme.labelText}`}>성장과정</label><button type="button" onClick={() => handleAiAudit('selfIntroGrowth', formData.selfIntroGrowth)} className="text-[10px] font-black text-blue-600 dark:text-blue-400 hover:underline">AI 컨설팅</button></div><textarea name="selfIntroGrowth" value={formData.selfIntroGrowth || ""} onChange={handleChange} onInput={autoExpand} rows="6" className={`w-full px-5 py-4 rounded-2xl border outline-none transition-all ${theme.innerInputBg} leading-relaxed min-h-[150px] overflow-hidden`} /></div>
+              <div className="flex flex-col gap-3 relative"><div className="flex justify-between items-center pl-1"><label className={`text-[13px] font-black uppercase tracking-wider ${theme.labelText}`}>성격의 장단점</label><button type="button" onClick={() => handleAiAudit('selfIntroCharacter', formData.selfIntroCharacter)} className="text-[10px] font-black text-blue-600 dark:text-blue-400 hover:underline">AI 컨설팅</button></div><textarea name="selfIntroCharacter" value={formData.selfIntroCharacter || ""} onChange={handleChange} onInput={autoExpand} rows="6" className={`w-full px-5 py-4 rounded-2xl border outline-none transition-all ${theme.innerInputBg} leading-relaxed min-h-[150px] overflow-hidden`} /></div>
+              <div className="flex flex-col gap-3 relative"><div className="flex justify-between items-center pl-1"><label className={`text-[13px] font-black uppercase tracking-wider ${theme.labelText}`}>지원동기 및 포부</label><button type="button" onClick={() => handleAiAudit('selfIntroMotivation', formData.selfIntroMotivation)} className="text-[10px] font-black text-blue-600 dark:text-blue-400 hover:underline">AI 컨설팅</button></div><textarea name="selfIntroMotivation" value={formData.selfIntroMotivation || ""} onChange={handleChange} onInput={autoExpand} rows="6" className={`w-full px-5 py-4 rounded-2xl border outline-none transition-all ${theme.innerInputBg} leading-relaxed min-h-[150px] overflow-hidden`} /></div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* 3. 하단 고정 액션 바 */}
-      <div className="p-8 border-t border-zinc-700/20 bg-zinc-500/5">
+      {/* 하단 버튼 */}
+      <div className="flex-none p-5 lg:p-6 border-t border-zinc-700/10 bg-zinc-500/5 backdrop-blur-md">
         <form onSubmit={handleSubmit}>
-          <button 
-            type="submit" 
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black text-xl py-5 rounded-[24px] shadow-2xl shadow-blue-600/30 transition-all transform hover:-translate-y-1.5 active:scale-[0.98] flex items-center justify-center gap-3 group"
-          >
-            <span>이력서 저장</span>
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-            </svg>
+          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 lg:py-5 rounded-2xl shadow-xl text-base lg:text-lg transition-all active:scale-[0.97] hover:scale-[1.01]">
+            저장 및 퍼블리싱
           </button>
         </form>
       </div>
+
+      {/* AI 컨설팅 모달 */}
+      {isAiModalOpen && aiFeedback && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-lg animate-fade-in">
+          <div className={`relative w-full max-w-2xl rounded-[40px] overflow-hidden shadow-2xl border ${isDarkMode ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-white'}`}>
+            <div className="p-6 border-b border-zinc-700/10 flex items-center justify-between bg-zinc-900/50 backdrop-blur-md">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
+                  <svg viewBox="0 0 24 24" className="w-6 h-6 fill-white"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z" /></svg>
+                </div>
+                <h3 className="text-xl font-black text-white">AI 커리어 컨설팅</h3>
+              </div>
+              <button onClick={() => setIsAiModalOpen(false)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-white/40 hover:text-white transition-all text-2xl">✕</button>
+            </div>
+
+            <div className="p-8 lg:p-10 max-h-[70vh] overflow-y-auto custom-scrollbar space-y-8">
+              {/* AI 가이드 */}
+              <section className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[11px] font-black uppercase tracking-widest text-blue-500">AI 분석 리포트</h4>
+                  <button onClick={handleRegenerate} className="flex items-center gap-1.5 text-[10px] font-black text-zinc-400 hover:text-blue-500 transition-colors">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    다시 분석하기
+                  </button>
+                </div>
+                <div className={`p-6 rounded-[24px] text-[14px] leading-relaxed font-medium ${isDarkMode ? 'bg-zinc-800/50 text-zinc-300' : 'bg-gray-50 text-zinc-600'}`}>
+                  {aiFeedback.feedback}
+                </div>
+              </section>
+
+              {/* 비교 뷰 */}
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-2">
+                  <span className="pl-1 text-[10px] font-black text-zinc-400 uppercase tracking-tighter">Original (원문)</span>
+                  <div className={`p-5 rounded-2xl border border-dashed text-sm opacity-60 ${isDarkMode ? 'border-zinc-700 text-zinc-400' : 'border-zinc-200 text-zinc-500'}`}>
+                    {aiFeedback.targetField === 'bio' ? formData.bio : 
+                     aiFeedback.targetField.startsWith('project-') ? formData.projects[parseInt(aiFeedback.targetField.split('-')[1])].description :
+                     aiFeedback.targetField.startsWith('work-') ? formData.workExperiences[parseInt(aiFeedback.targetField.split('-')[1])].jobDescription :
+                     formData[aiFeedback.targetField]}
+                  </div>
+                </div>
+
+                <div className="relative pt-4">
+                  <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-10 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center shadow-lg border-4 border-white dark:border-zinc-900">
+                    <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="4"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                  </div>
+                  <div className="space-y-2">
+                    <span className="pl-1 text-[10px] font-black text-emerald-500 uppercase tracking-tighter">Recommended (추천문)</span>
+                    <div className={`p-8 rounded-[32px] border-2 shadow-xl ${isDarkMode ? 'bg-blue-950/10 border-blue-500/20 text-white' : 'bg-blue-50/50 border-blue-100 text-zinc-900'}`}>
+                      <p className="font-black text-[17px] leading-relaxed italic text-center mb-8">"{aiFeedback.refinedText}"</p>
+                      
+                      <div className="flex gap-3">
+                        <button 
+                          onClick={() => copyToClipboard(aiFeedback.refinedText)}
+                          className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl font-black text-xs transition-all ${isDarkMode ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700' : 'bg-white text-zinc-600 hover:bg-zinc-50 border border-zinc-200 shadow-sm'}`}
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                          복사하기
+                        </button>
+                        <button 
+                          onClick={() => applyAiRefinement(aiFeedback.refinedText)} 
+                          className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black shadow-lg shadow-blue-600/30 hover:bg-blue-700 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                        >
+                          즉시 변경하기
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6 border-t flex justify-center bg-zinc-500/5">
+              <button onClick={() => setIsAiModalOpen(false)} className="px-10 py-2.5 text-zinc-400 font-black text-sm hover:text-zinc-200 transition-colors">나중에 할게요</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAddressOpen && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
+          <div className={`relative w-full max-w-lg rounded-[32px] overflow-hidden shadow-2xl ${isDarkMode ? 'bg-zinc-900 border border-zinc-700' : 'bg-white'}`}>
+            <div className="flex items-center justify-between p-6 border-b border-zinc-700/10">
+              <h3 className={`font-black text-lg ${isDarkMode ? 'text-white' : 'text-zinc-800'}`}>주소 검색</h3>
+              <button 
+                onClick={() => setIsAddressOpen(false)} 
+                className={`w-8 h-8 flex items-center justify-center rounded-full transition-all text-xl ${isDarkMode ? 'text-white/60 hover:text-white hover:bg-zinc-800' : 'text-zinc-500 hover:text-zinc-800 hover:bg-gray-100'}`}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-2">
+              <DaumPostcode 
+                onComplete={(data) => { handleChange({ target: { name: "address", value: data.address } }); setIsAddressOpen(false); }} 
+                style={{ height: '450px' }}
+                theme={isDarkMode ? {
+                  bgColor: "#18181b", // 바탕 배경색
+                  searchBgColor: "#18181b", // 검색창 배경색
+                  contentBgColor: "#18181b", // 본문 배경색(검색결과, 폼 등)
+                  pageBgColor: "#18181b", // 페이지 배경색
+                  textColor: "#ffffff", // 기본 글자색
+                  queryTextColor: "#ffffff", // 검색창 글자색
+                  postcodeTextColor: "#3b82f6", // 우편번호 글자색
+                  emphasizeTextColor: "#60a5fa", // 강조 글자색
+                  outlineColor: "#3f3f46" // 테두리선 색상
+                } : null}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

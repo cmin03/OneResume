@@ -2,34 +2,84 @@
 @tailwind components;
 @tailwind utilities;
 @media print {
-  /* 인쇄 시 배경색과 글자색을 그대로 유지 */
+  /* 1. 기본 배경 및 색상 보존 설정 */
   body {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
     background-color: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
   }
-  
-  /* 입력창, 헤더, 버튼 등 이력서 외의 모든 요소 숨기기 */
-  header, form, button, .lg\:w-\[450px\] {
+
+  /* 2. 인쇄 포털이 첫 페이지 최상단에 오도록 설정 */
+  .print\:block {
+    display: block !important;
+    position: static !important; /* 흐름을 따르게 함 */
+    width: 210mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  /* 4. 불필요한 알림 및 오버레이 숨김 */
+  [id^="headlessui-portal-root"], /* Headless UI 포털 (모달 등) */
+  #toaster, /* 토스터 아이디 */
+  .react-hot-toast, /* 토스트 클래스 */
+  div[style*="z-index: 9999"], /* z-index가 매우 높은 모든 레이어 (알림 등) */
+  .go2072402845,
+  [role="status"] {
     display: none !important;
   }
 
-  /* 이력서 영역만 화면에 꽉 차게 설정 */
-  .max-w-7xl {
-    display: block !important;
-    max-width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  .shadow-2xl, .border-t-\[12px\] {
-    box-shadow: none !important;
-    border-top: none !important;
-  }
-
-  /* A4 사이즈 강제 설정 */
+  /* 5. A4 규격 강제 및 여백 제거 */
   @page {
     size: A4;
     margin: 0;
   }
+}
+
+/* --- Custom Scrollbar --- */
+/* 공통 설정 */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 10px;
+  transition: background 0.3s;
+}
+
+/* Light Mode Scrollbar (기본) */
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* Dark Mode Scrollbar (.dark 클래스가 상위에 있을 때) */
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Firefox 전용 (선택사항) */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.1) transparent;
+}
+
+.dark .custom-scrollbar {
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
