@@ -61,6 +61,26 @@ function App() {
     }
   }, [isDarkMode]);
 
+  // 인쇄 시 다크모드 강제 해제 로직 (PDF는 무조건 라이트모드)
+  useEffect(() => {
+    const handleBeforePrint = () => {
+      document.documentElement.classList.remove('dark');
+    };
+    const handleAfterPrint = () => {
+      if (isDarkMode) {
+        document.documentElement.classList.add('dark');
+      }
+    };
+
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, [isDarkMode]);
+
   // 테마 토글 함수 (자식 컴포넌트들에게 전달할 용도)
   const toggleDarkMode = () => {
     const newTheme = !isDarkMode;
@@ -75,13 +95,9 @@ function App() {
         position="top-center"
         reverseOrder={false}
         toastOptions={{
+          className: 'oneresume-toast',
           style: {
             borderRadius: '16px',
-            padding: '16px 24px',
-            fontSize: '1.1rem',
-            maxWidth: '500px',
-            fontWeight: '600',
-            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
             // 실시간 isDarkMode 상태 반영
             background: isDarkMode ? '#1e293b' : '#ffffff', // slate-800 : white
             color: isDarkMode ? '#f8fafc' : '#1e293b',      // slate-50 : slate-800
