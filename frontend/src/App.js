@@ -31,7 +31,7 @@ function App() {
       (error) => {
         // 에러가 났는데 그게 429 요청 초과 라면?
         if (error.response && error.response.status === 429) {
-          toast.error(error.response.data.message || "요청이 너무 많습니다. 1분 후 다시 시도해주세요.", {
+          toast.error(error.response.data.message || "요청이 너무 많습니다.\n1분 후 다시 시도해주세요.", {
             id: 'rate-limit-error', // 중복 토스트 방지용 ID
           });
         }
@@ -94,6 +94,11 @@ function App() {
       <Toaster
         position="top-center"
         reverseOrder={false}
+        containerStyle={{
+          // 아이폰 노치(Safe Area) 대응: 홈 화면 추가(PWA) 시 상단 가림 방지
+          top: 'env(safe-area-inset-top, 20px)',
+          marginTop: '8px'
+        }}
         toastOptions={{
           className: 'oneresume-toast',
           style: {
@@ -104,11 +109,11 @@ function App() {
             border: isDarkMode ? '1px solid #334155' : '1px solid #f1f5f9', // slate-700 : slate-100
            },
           success: {
-            duration: 3000,
+            duration: 2000,
             theme: { primary: '#10b981' },
           },
           error: {
-            duration: 4000,
+            duration: 2500,
             theme: { primary: '#ef4444' },
           },
         }}

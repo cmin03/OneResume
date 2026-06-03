@@ -85,35 +85,57 @@ exports.searchWorknet = async (req, res) => {
     }
 };
 
-// [0-2] 워크넷 학과 정보 검색 프록시 API
+// [0-2] 학과 정보 검색 프록시 API (커리어넷 기반 단일화)
 exports.searchWorknetDept = async (req, res) => {
+    const { keyword } = req.query;
+    console.log(`🔍 [Major Search] Keyword: ${keyword}`);
+
+    if (!keyword || keyword.length < 2) {
+        return res.status(400).json({ message: "검색어는 2자 이상 입력해주세요." });
+    }
+
     try {
-        const { keyword } = req.query;
-        console.log(`🔍 [Worknet Dept Search] Keyword: ${keyword}`);
-
-        if (!keyword || keyword.length < 2) {
-            return res.status(400).json({ message: "검색어는 2자 이상 입력해주세요." });
-        }
-
-        if (!WORKNET_DEPT_KEY) {
-            return res.status(500).json({ message: "워크넷 학과 API 키가 설정되지 않았습니다." });
-        }
-
-        // 워크넷 API 명세: 학과 정보 검색 (univSrch)
-        // target=UNIV_DEPT_LIST (학과 리스트 조회) 필수
-        const url = `http://openapi.work.go.kr/opi/opi/opia/univSrch.do?authKey=${WORKNET_DEPT_KEY}&returnType=XML&target=UNIV_DEPT_LIST&srchType=univNm&keyword=${encodeURIComponent(keyword)}&display=20`;
+        // [v1.8.7] 고용24 차단 문제로 인해 커리어넷 단독 시스템으로 전환 (배포 서버 가용성 확보)
+        console.log("🚀 Calling CareerNet (Standard)...");
+        const careerUrl = `https://www.career.go.kr/cnet/openapi/getOpenApi?apiKey=${CAREERNET_API_KEY}&svcType=api&svcCode=MAJOR&contentType=json&gubun=univ_list&searchTitle=${encodeURIComponent(keyword)}`;
         
-        console.log(`🔗 Request URL: ${url}`);
-        const response = await axios.get(url);
+        const response = await axios.get(careerUrl, { timeout: 6000 });
+        const careerData = response.data?.dataSearch?.content || [];
         
-        // XML -> JSON 변환
-        const jsonObj = parser.parse(response.data);
-        const items = jsonObj.univDeptList?.item || [];
+        const tempResults = [];
+        const seen = new Set();
 
-        res.status(200).json({ univSrch: items });
+        // 1. 뭉쳐있는 데이터 낱개로 쪼개기 (De-fragmentation)
+        careerData.forEach(item => {
+            const rawName = item.majorName || item.facilName || "";
+            const splitNames = rawName.split(',').map(n => n.trim()).filter(n => n.length > 0);
+            
+            splitNames.forEach(name => {
+                if (!seen.has(name)) {
+                    seen.add(name);
+                    tempResults.push({
+                        majorName: name,
+                        detailName: item.lClass || "대학교 전공"
+                    });
+                }
+            });
+        });
+
+        // 2. 관련성 정렬 (Relevance Sorting): 키워드 시작 우선 + 짧은 이름 우선
+        const normalized = tempResults.sort((a, b) => {
+            const aStartsWith = a.majorName.startsWith(keyword);
+            const bStartsWith = b.majorName.startsWith(keyword);
+            if (aStartsWith && !bStartsWith) return -1;
+            if (!aStartsWith && bStartsWith) return 1;
+            return a.majorName.length - b.majorName.length;
+        }).slice(0, 25);
+
+        console.log(`✅ CareerNet Search Success: ${normalized.length} items`);
+        res.status(200).json({ univSrch: normalized });
+
     } catch (error) {
-        console.error("❌ 워크넷 학과 API 에러:", error.response?.data || error.message);
-        res.status(500).json({ message: "워크넷 학과 서버와 통신 중 오류가 발생했습니다." });
+        console.error("❌ 학과 검색 최종 에러:", error.message);
+        res.status(500).json({ message: "학과 검색 서비스 이용이 일시적으로 제한되었습니다." });
     }
 };
 
@@ -412,15 +434,15 @@ exports.saveResume = async (req, res) => {
                     title: resumeData.title,
                     education: resumeData.education,
                     skills: resumeData.skills,
-                    militaryStatus: resumeData.militaryStatus,
-                    militaryBranch: resumeData.militaryBranch,
-                    militaryRank: resumeData.militaryRank,
-                    militaryStartDate: resumeData.militaryStartDate,
-                    militaryEndDate: resumeData.militaryEndDate,
-                    militaryExemption: resumeData.militaryExemption,
-                    selfIntroGrowth: resumeData.selfIntroGrowth,
-                    selfIntroCharacter: resumeData.selfIntroCharacter,
-                    selfIntroMotivation: resumeData.selfIntroMotivation,
+                    militaryStatus: militaryStatus || null,
+                    militaryBranch: militaryBranch || null,
+                    militaryRank: militaryRank || null,
+                    militaryStartDate: militaryStartDate || null,
+                    militaryEndDate: militaryEndDate || null,
+                    militaryExemption: militaryExemption || null,
+                    selfIntroGrowth: selfIntroGrowth || null,
+                    selfIntroCharacter: selfIntroCharacter || null,
+                    selfIntroMotivation: selfIntroMotivation || null,
                     sectionOrder: resumeData.sectionOrder,
                     projects: {
                         deleteMany: {},

@@ -4,7 +4,7 @@
  * ---------------------------------------------------------
  */
 
-console.log("🚀 OneResume Connect: Engine v1.5.0 Loaded");
+console.log("OneResume Connect: Engine v1.5.0 Loaded");
 
 let cachedResumeData = null;
 let isExtensionActive = true;
@@ -255,14 +255,15 @@ const forceInput = (element, value, domainType) => {
 };
 
 const runAutofill = async (resumeData) => {
-  if (!resumeData || !isExtensionActive) return;
+  if (!resumeData || !isExtensionActive) return 0;
   const host = window.location.hostname;
   const domainType = host.includes('saramin.co.kr') ? 'saramin' : (host.includes('jobkorea.co.kr') ? 'jobkorea' : 'other');
 
-  if (window.self !== window.top) return;
+  if (window.self !== window.top) return 0;
 
+  let fillCount = 0; // [v1.2.0] 채워진 항목 수 카운팅
   const configEntry = Object.entries(AUTOFILL_CONFIG).find(([domain]) => host.includes(domain));
-  if (!configEntry) return;
+  if (!configEntry) return 0;
 
   const config = configEntry[1];
   for (const [selector, dataPath] of Object.entries(config)) {
@@ -280,7 +281,10 @@ const runAutofill = async (resumeData) => {
         if (rawDate.length >= 6) finalValue = rawDate.substring(0, 4) + '.' + rawDate.substring(4, 6);
         else if (rawDate.length >= 4) finalValue = rawDate.substring(0, 4);
       }
-      elements.forEach(element => forceInput(element, finalValue, domainType));
+      elements.forEach(element => {
+        forceInput(element, finalValue, domainType);
+        fillCount++;
+      });
     } catch (e) {}
   }
 
@@ -288,22 +292,26 @@ const runAutofill = async (resumeData) => {
     for (const [triggerLabel, dataPath] of Object.entries(config.CLICK_SELECT)) {
       const value = getValueByPath(resumeData, dataPath);
       if (!value) continue;
-      if (clickByText(triggerLabel)) setTimeout(() => clickByText(value), 500);
+      if (clickByText(triggerLabel)) {
+        setTimeout(() => clickByText(value), 500);
+        fillCount++;
+      }
     }
   }
+  return fillCount;
 };
 
 // 팝업 버튼 클릭으로 들어오는 요청 처리
 if (window.chrome?.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "RUN_AUTOFILL") {
-      runAutofill(request.resumeData).then(() => {
+      runAutofill(request.resumeData).then((count) => {
         const host = window.location.hostname;
         let siteName = null;
         let themeColor = null;
         if (host.includes('saramin.co.kr')) { siteName = '사람인'; themeColor = '#4876ef'; }
         else if (host.includes('jobkorea.co.kr')) { siteName = '잡코리아'; themeColor = '#ff4b13'; }
-        if (siteName) createOverlay(siteName, themeColor, 'success');
+        if (siteName) createOverlay(siteName, themeColor, 'success', count);
       });
       sendResponse({ status: "success" });
     }
@@ -314,7 +322,7 @@ if (window.chrome?.runtime?.onMessage) {
 /**
  * [UI/UX] Overlay 및 FAB 생성
  */
-const createOverlay = (siteName, themeColor, mode = 'ready') => {
+const createOverlay = (siteName, themeColor, mode = 'ready', count = 0) => {
   const existingOverlay = document.getElementById('or-magic-overlay');
   if (existingOverlay) existingOverlay.remove();
 
@@ -323,18 +331,28 @@ const createOverlay = (siteName, themeColor, mode = 'ready') => {
     overlay.id = 'or-magic-overlay';
     let siteLogo = siteName === '사람인' ? chrome.runtime.getURL('icons/saramin.webp') : 'https://www.jobkorea.co.kr/favicon.ico';
 
-    const textContent = mode === 'success' ? `<strong>${siteName}</strong> 자동입력이 완료되었습니다` : `<strong>${siteName}</strong> 자동입력 준비완료`;
-    const iconContent = mode === 'success'
-      ? `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
-      : `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>`;
-    const arrowClass = mode === 'success' ? '' : 'or-bounce-x';
-    const boxStyle = mode === 'success' ? 'border: 2px solid rgba(16,185,129,0.4); box-shadow: 0 20px 50px rgba(16,185,129,0.15);' : '';
+    let textContent = `<strong>${siteName}</strong> 자동입력 준비완료`;
+    let iconContent = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>`;
+    
+    if (mode === 'success') {
+      textContent = count > 0 
+        ? `<strong>${siteName}</strong> 총 <strong>${count}개</strong> 항목 자동입력 완료!` 
+        : `<strong>${siteName}</strong> 자동입력이 완료되었습니다`;
+      iconContent = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+    } else if (mode === 'ai_ready') {
+      textContent = `<strong>${siteName}</strong> AI 공고 분석 준비완료`;
+      // [v1.1.9] 스캐너 아이콘 시인성 개선을 위해 크기 상향 (22 -> 26)
+      iconContent = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/><path d="m16 16-1.9-1.9"/></svg>`;
+    }
+
+    const arrowClass = (mode === 'ready' || mode === 'ai_ready') ? 'or-bounce-x' : '';
+    const boxStyle = mode === 'success' ? 'border: 2px solid rgba(16,185,129,0.4); box-shadow: 0 20px 50px rgba(16,185,129,0.15);' : (mode === 'ai_ready' ? 'border: 2px solid rgba(129,140,248,0.4); box-shadow: 0 20px 50px rgba(129,140,248,0.15);' : '');
 
     overlay.innerHTML = `
       <div class="or-box" style="${boxStyle}">
         <div class="or-inner-content">
           <div class="or-logo or-brand">
-            <img src="${chrome.runtime.getURL('icons/logo.png')}" alt="OR" style="width: 100%; height: 100%; object-fit: cover;">
+            <img src="${chrome.runtime.getURL('icons/logo128.png')}" alt="OR" style="width: 100%; height: 100%; object-fit: cover;">
           </div>
           <div class="or-reveal-group">
             <div class="or-arrow ${arrowClass}">
@@ -359,16 +377,16 @@ const createOverlay = (siteName, themeColor, mode = 'ready') => {
         #or-magic-overlay { position: fixed; top: 64px; left: 50%; transform: translateX(-50%) translateY(-20px); z-index: 2147483647; opacity: 0; pointer-events: none; transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.19, 1, 0.22, 1); font-family: 'Pretendard', sans-serif; }
         #or-magic-overlay.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
         #or-magic-overlay .or-box { background: rgba(15, 23, 42, 0.98); backdrop-filter: blur(24px); padding: 10px; border-radius: 28px; border: 2px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: flex-start; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.4); width: 80px; height: 80px; box-sizing: border-box; transition: width 0.9s cubic-bezier(0.19, 1, 0.22, 1), border-color 0.5s ease, box-shadow 0.5s ease; }
-        #or-magic-overlay.expanded .or-box { width: 580px; }
-        #or-magic-overlay .or-inner-content { display: flex; align-items: center; flex-wrap: nowrap; flex-shrink: 0; width: 600px; height: 100%; }
+        #or-magic-overlay.expanded .or-box { width: 640px; }
+        #or-magic-overlay .or-inner-content { display: flex; align-items: center; flex-wrap: nowrap; flex-shrink: 0; width: 660px; height: 100%; }
         #or-magic-overlay .or-logo { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
         #or-magic-overlay .or-brand { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
         #or-magic-overlay .or-site-logo { background: transparent; }
-        #or-magic-overlay .or-reveal-group { display: flex; align-items: center; gap: 20px; opacity: 0; transform: translateX(-30px); transition: opacity 0.7s ease, transform 0.9s cubic-bezier(0.19, 1, 0.22, 1); width: 0; overflow: hidden; padding-left: 20px; }
-        #or-magic-overlay.expanded .or-reveal-group { opacity: 1; transform: translateX(0); width: 480px; }
-        #or-magic-overlay .or-arrow { color: #60a5fa; width: 28px; display: flex; justify-content: center; }
-        #or-magic-overlay .or-divider { width: 2px; height: 36px; background: rgba(255,255,255,0.18); }
-        #or-magic-overlay .or-text { color: white; font-size: 22px; font-weight: 700; }
+        #or-magic-overlay .or-reveal-group { display: flex; align-items: center; gap: 20px; opacity: 0; transform: translateX(-30px); transition: opacity 0.7s ease, transform 0.9s cubic-bezier(0.19, 1, 0.22, 1); width: 0; overflow: hidden; padding-left: 20px; white-space: nowrap; }
+        #or-magic-overlay.expanded .or-reveal-group { opacity: 1; transform: translateX(0); width: 540px; }
+        #or-magic-overlay .or-arrow { color: #60a5fa; width: 28px; display: flex; justify-content: center; flex-shrink: 0; }
+        #or-magic-overlay .or-divider { width: 2px; height: 36px; background: rgba(255,255,255,0.18); flex-shrink: 0; }
+        #or-magic-overlay .or-text { color: white; font-size: 22px; font-weight: 700; white-space: nowrap; }
         #or-magic-overlay .or-text strong { color: #60a5fa; font-weight: 900; margin-right: 8px; }
         
         .or-bounce-x { animation: or-bounce-x 1s infinite; }
@@ -493,25 +511,66 @@ const initSmartEngine = () => {
   if (!isExtensionActive) return;
   try {
     const host = window.location.hostname;
+    const path = window.location.pathname.toLowerCase(); // [v1.1.9 Fix] 대소문자 구분 방지
+    
     let siteName = null;
     let themeColor = null;
-    if (host.includes('saramin.co.kr')) { siteName = '사람인'; themeColor = '#4876ef'; }
-    else if (host.includes('jobkorea.co.kr')) { siteName = '잡코리아'; themeColor = '#ff4b13'; }
-    
-    if (siteName && window.self === window.top) {
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => { 
-          createOverlay(siteName, themeColor); 
-          createFAB(); 
-          createAIWidget();
-        });
-      } else {
-        setTimeout(() => { 
-          createOverlay(siteName, themeColor); 
-          createFAB(); 
-          createAIWidget();
-        }, 500);
+    let isResumeEditPage = false;
+    let isJobPostingPage = false;
+
+    // 1. 사이트 판별 및 페이지 유형 체크
+    if (host.includes('saramin.co.kr')) { 
+      siteName = '사람인'; 
+      themeColor = '#4876ef';
+      
+      // 사람인 이력서 작성/수정 페이지
+      if (path.includes('/resume-manage/write') || path.includes('/resume/resume-edit') || path.includes('/resume-manage/modify')) {
+        isResumeEditPage = true;
       }
+      // 사람인 채용 공고 페이지 (relay/view 등 다양한 상세 페이지 대응)
+      if (path.includes('/recruit/recruit_view') || path.includes('/jobs/view') || path.includes('/jobs/relay/view')) {
+        isJobPostingPage = true;
+      }
+    }
+    else if (host.includes('jobkorea.co.kr')) { 
+      siteName = '잡코리아'; 
+      themeColor = '#ff4b13';
+      
+      // 잡코리아 이력서 작성/수정 페이지
+      if (path.includes('/user/resume/write') || path.includes('/user/resume/modify')) {
+        isResumeEditPage = true;
+      }
+      // 잡코리아 채용 공고 페이지 (gi_read, jobread 등 대응)
+      if (path.includes('/recruit/jobread') || path.includes('/job/view') || path.includes('/recruit/gi_read')) {
+        isJobPostingPage = true;
+      }
+    }
+    
+    if (window.self !== window.top) return;
+
+    // 2. 엔진 및 UI 초기화 전략
+    const setupUI = () => {
+      // AI 위젯은 사람인/잡코리아 어디서든 노출 (공고 분석 및 자소서 지원)
+      if (siteName) {
+        createAIWidget();
+      }
+      
+      // 자동입력 엔진(FAB, Overlay)은 이력서 편집 페이지에서만 노출
+      if (isResumeEditPage) {
+        createOverlay(siteName, themeColor); 
+        createFAB(); 
+      }
+      
+      // [v1.1.9 New] 채용 공고 페이지에서는 AI 분석 안내 알림 노출
+      if (isJobPostingPage) {
+        createOverlay(siteName, themeColor, 'ai_ready');
+      }
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', setupUI);
+    } else {
+      setTimeout(setupUI, 500);
     }
   } catch (e) {}
 };
@@ -522,21 +581,49 @@ const extractJDText = () => {
   try {
     let extracted = "";
     if (host.includes('saramin.co.kr')) {
-      const container = document.querySelector('.wrap_jv_cont, .cont_info, .jv_summary, .wrap_jview');
-      if (container) extracted = container.innerText;
+      // 사람인 최신 공고 뷰 및 구형 뷰 통합 대응
+      const selectors = [
+        '.wrap_jv_cont', '.cont_info', '.jv_summary', '.wrap_jview', 
+        '.recruit_content', '#v_main_cnt', '.view_con', '.user_content'
+      ];
+      for (const s of selectors) {
+        const el = document.querySelector(s);
+        if (el && el.innerText.trim().length > 100) {
+          extracted = el.innerText;
+          break;
+        }
+      }
     } else if (host.includes('jobkorea.co.kr')) {
-      const container = document.querySelector('.artReadJobSum, .stContainer, .artReadTxt, .tbRow');
-      if (container) extracted = container.innerText;
+      // 잡코리아 상세 공고 영역 대응
+      const selectors = [
+        '.artReadJobSum', '.stContainer', '.artReadTxt', '.tbRow', 
+        '.recruit-content', '.devRecruitDetail', '#gib_contents'
+      ];
+      for (const s of selectors) {
+        const el = document.querySelector(s);
+        if (el && el.innerText.trim().length > 100) {
+          extracted = el.innerText;
+          break;
+        }
+      }
     }
     
-    if (!extracted || extracted.trim().length < 50) {
-      extracted = document.body.innerText;
+    // 특정 영역 추출 실패 시, 불필요한 태그를 제외한 본문 전체 스캔
+    if (!extracted || extracted.trim().length < 200) {
+      const clone = document.body.cloneNode(true);
+      // 스크립트, 스타일, 내비게이션, 푸터 등 노이즈 제거
+      const junk = clone.querySelectorAll('script, style, nav, footer, header, .header, .footer, #header, #footer');
+      junk.forEach(j => j.remove());
+      extracted = clone.innerText;
     }
+    
     text += extracted;
   } catch (e) {
     text += document.body.innerText;
   }
-  return text.substring(0, 8000);
+  
+  // AI가 읽기 너무 긴 경우를 위해 핵심부 10,000자 제한 (기존 8,000에서 상향)
+  return text.substring(0, 10000).replace(/\s\s+/g, ' ');
 };
 
 const createAIWidget = () => {
@@ -547,7 +634,7 @@ const createAIWidget = () => {
     container.innerHTML = `
       <div id="or-ai-toggle" class="or-ai-btn">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z" /></svg>
-        <span>AI 분석</span>
+        <span>OneResume AI 분석</span>
       </div>
       <div id="or-ai-menu" class="or-ai-panel or-ai-hidden">
         <button id="or-btn-match" class="or-ai-action-btn">
@@ -599,6 +686,21 @@ const createAIWidget = () => {
       .or-ai-tag.missing { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
       .or-loading-spinner { animation: or-spin 0.8s linear infinite; display: inline-block; width: 20px; height: 20px; border: 2.5px solid rgba(255,255,255,0.2); border-top-color: #6366f1; border-radius: 50%; }
       @keyframes or-spin { to { transform: rotate(360deg); } }
+
+      /* [v1.2.0] 스캐너 로딩 애니메이션 */
+      .or-scanner-container { position: relative; width: 100%; height: 120px; background: rgba(0,0,0,0.2); border-radius: 12px; overflow: hidden; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.05); }
+      .or-scan-line { position: absolute; top: 0; left: 0; width: 100%; height: 3px; background: linear-gradient(to bottom, rgba(99, 102, 241, 0), #6366f1, rgba(99, 102, 241, 0)); box-shadow: 0 0 15px #6366f1; animation: or-scan 2s ease-in-out infinite; z-index: 2; }
+      @keyframes or-scan { 0%, 100% { top: 5%; } 50% { top: 95%; } }
+      .or-scan-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px); background-size: 20px 20px; z-index: 1; }
+      
+      /* [v1.2.0] 점수별 색상 */
+      .or-score-high { color: #10b981 !important; text-shadow: 0 0 20px rgba(16,185,129,0.4); }
+      .or-score-mid { color: #f59e0b !important; text-shadow: 0 0 20px rgba(245,158,11,0.3); }
+      .or-score-low { color: #ef4444 !important; text-shadow: 0 0 20px rgba(239,68,68,0.3); }
+
+      /* [v1.2.0] 다시 시도 버튼 */
+      .or-retry-btn { width: 100%; padding: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94a3b8; border-radius: 10px; font-weight: 700; cursor: pointer; margin-top: 10px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+      .or-retry-btn:hover { background: rgba(255,255,255,0.1); color: white; }
     `;
     document.head.appendChild(style);
     document.body.appendChild(container);
@@ -637,7 +739,20 @@ const createAIWidget = () => {
         menu.classList.add('or-ai-hidden');
         resultBox.classList.remove('or-ai-hidden');
         
-        contentBox.innerHTML = '<div style="display:flex; flex-direction:column; align-items:center; padding: 40px 0;"><div class="or-loading-spinner"></div><div style="margin-top:15px; color:#94a3b8; font-weight:600;">AI가 분석 중입니다...</div></div>';
+        // [v1.2.0] 시네마틱 스캐너 로딩 UI 적용
+        contentBox.innerHTML = `
+          <div style="padding: 20px 0;">
+            <div class="or-scanner-container">
+              <div class="or-scan-grid"></div>
+              <div class="or-scan-line"></div>
+              <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; z-index:3;">
+                <div class="or-loading-spinner" style="width:30px; height:30px; border-width:3px;"></div>
+                <div style="margin-top:15px; color:#cbd5e1; font-weight:700; font-size:13px; letter-spacing:-0.02em;">OneResume AI가 분석 중입니다...</div>
+              </div>
+            </div>
+            <div style="color:#64748b; font-size:11px; text-align:center;">공고 내용을 정밀 스캔하고 있습니다</div>
+          </div>
+        `;
 
         chrome.runtime.sendMessage({
           action: "CALL_AI_API",
@@ -646,7 +761,18 @@ const createAIWidget = () => {
           body: bodyData
         }, (response) => {
           if (chrome.runtime.lastError || !response || !response.success) {
-            contentBox.innerHTML = `<div style="color:#ef4444; padding:20px; text-align:center;">오류가 발생했습니다:<br>${response ? response.error : '네트워크 오류'}</div>`;
+            // [v1.2.0] 에러 시 다시 시도 버튼 추가
+            contentBox.innerHTML = `
+              <div style="padding:30px 10px; text-align:center;">
+                <div style="color:#f87171; font-weight:700; margin-bottom:15px;">분석 중 오류가 발생했습니다</div>
+                <div style="color:#94a3b8; font-size:12px; margin-bottom:20px;">네트워크 상태를 확인하거나 잠시 후 다시 시도해 주세요.</div>
+                <button id="or-retry-ai" class="or-retry-btn">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                  다시 시도하기
+                </button>
+              </div>
+            `;
+            document.getElementById('or-retry-ai')?.addEventListener('click', () => callAI(endpoint, bodyData, renderSuccess));
             return;
           }
           renderSuccess(response.data);
@@ -658,21 +784,67 @@ const createAIWidget = () => {
       titleBox.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> 공고 적합도 매칭`;
       const jdText = extractJDText();
       callAI('/api/ai/match-jd', { jdText }, (data) => {
-        let html = `
-          <div style="text-align: center; margin-bottom: 20px; background: rgba(255,255,255,0.03); padding: 15px; border-radius: 14px;">
-            <div style="font-size:12px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:1px;">Match Score</div>
-            <div class="or-ai-score">${data.score}점</div>
-          </div>
-          <div class="or-ai-section-title">일치하는 역량</div>
-          <div style="margin-bottom:10px;">${data.matchedKeywords?.map(k => `<span class="or-ai-tag matched">${k}</span>`).join('') || '-'}</div>
-          <div class="or-ai-section-title">부족한 역량</div>
-          <div style="margin-bottom:10px;">${data.missingKeywords?.map(k => `<span class="or-ai-tag missing">${k}</span>`).join('') || '-'}</div>
-          <div class="or-ai-section-title">AI 개선 팁</div>
-          <ul style="padding-left: 18px; margin-top: 8px;">
-            ${data.improvementTips?.map(t => `<li style="margin-bottom:8px; color:#cbd5e1;">${t}</li>`).join('') || ''}
-          </ul>
-        `;
-        contentBox.innerHTML = html;
+        contentBox.innerHTML = ''; 
+        
+        const scoreBox = document.createElement('div');
+        scoreBox.style.cssText = "text-align: center; margin-bottom: 20px; background: rgba(255,255,255,0.03); padding: 15px; border-radius: 14px;";
+        
+        const scoreLabel = document.createElement('div');
+        scoreLabel.style.cssText = "font-size:12px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:1px;";
+        scoreLabel.textContent = "Match Score";
+        
+        // [v1.2.0] 점수별 동적 색상 적용
+        const scoreVal = document.createElement('div');
+        scoreVal.className = "or-ai-score";
+        if (data.score >= 80) scoreVal.classList.add('or-score-high');
+        else if (data.score >= 50) scoreVal.classList.add('or-score-mid');
+        else scoreVal.classList.add('or-score-low');
+        
+        scoreVal.textContent = `${data.score}점`;
+        
+        scoreBox.appendChild(scoreLabel);
+        scoreBox.appendChild(scoreVal);
+        contentBox.appendChild(scoreBox);
+
+        const renderTags = (title, keywords, className) => {
+          const titleDiv = document.createElement('div');
+          titleDiv.className = "or-ai-section-title";
+          titleDiv.textContent = title;
+          contentBox.appendChild(titleDiv);
+          
+          const tagContainer = document.createElement('div');
+          tagContainer.style.marginBottom = "10px";
+          
+          if (keywords && keywords.length > 0) {
+            keywords.forEach(k => {
+              const span = document.createElement('span');
+              span.className = `or-ai-tag ${className}`;
+              span.textContent = k;
+              tagContainer.appendChild(span);
+            });
+          } else {
+            tagContainer.textContent = "-";
+          }
+          contentBox.appendChild(tagContainer);
+        };
+
+        renderTags("일치하는 역량", data.matchedKeywords, "matched");
+        renderTags("부족한 역량", data.missingKeywords, "missing");
+
+        const tipTitle = document.createElement('div');
+        tipTitle.className = "or-ai-section-title";
+        tipTitle.textContent = "AI 개선 팁";
+        contentBox.appendChild(tipTitle);
+
+        const tipList = document.createElement('ul');
+        tipList.style.cssText = "padding-left: 18px; margin-top: 8px;";
+        data.improvementTips?.forEach(t => {
+          const li = document.createElement('li');
+          li.style.cssText = "margin-bottom:8px; color:#cbd5e1;";
+          li.textContent = t;
+          tipList.appendChild(li);
+        });
+        contentBox.appendChild(tipList);
       });
     });
 
@@ -680,30 +852,54 @@ const createAIWidget = () => {
       titleBox.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> 맞춤형 자소서 생성`;
       const jdText = extractJDText();
       callAI('/api/ai/generate-cover-letter', { jdText }, (data) => {
-        let html = `
-          <div style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(79, 70, 229, 0.15)); border: 1px solid rgba(99, 102, 241, 0.3); padding: 12px; border-radius: 12px; margin-bottom: 20px; font-size: 13px;">
-            <strong style="color:#a5b4fc; display:block; margin-bottom:4px;">💡 AI 작성 전략:</strong> ${data.summary}
-          </div>
-          <div class="or-ai-section-title">1. 지원동기</div>
-          <div style="background: rgba(0,0,0,0.25); padding: 12px; border-radius: 10px; margin-bottom: 12px; white-space: pre-wrap; font-size:13px;">${data.motivation}</div>
-          <div class="or-ai-section-title">2. 직무 역량</div>
-          <div style="background: rgba(0,0,0,0.25); padding: 12px; border-radius: 10px; margin-bottom: 12px; white-space: pre-wrap; font-size:13px;">${data.competency}</div>
-          <div class="or-ai-section-title">3. 성장과정/성격</div>
-          <div style="background: rgba(0,0,0,0.25); padding: 12px; border-radius: 10px; margin-bottom: 12px; white-space: pre-wrap; font-size:13px;">${data.character}</div>
-          <button id="or-copy-cover" style="width: 100%; padding: 12px; background: #4f46e5; color: white; border: none; border-radius: 12px; font-weight: 800; cursor: pointer; margin-top: 15px; transition: all 0.2s;">본문 전체 복사하기</button>
-        `;
-        contentBox.innerHTML = html;
+        // [Security] innerHTML 대신 textContent 사용하여 XSS 방어
+        contentBox.innerHTML = ''; // 초기화
+
+        const strategyBox = document.createElement('div');
+        strategyBox.style.cssText = "background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(79, 70, 229, 0.15)); border: 1px solid rgba(99, 102, 241, 0.3); padding: 12px; border-radius: 12px; margin-bottom: 20px; font-size: 13px;";
         
-        const copyBtn = document.getElementById('or-copy-cover');
+        const strategyTitle = document.createElement('strong');
+        strategyTitle.style.cssText = "color:#a5b4fc; display:block; margin-bottom:4px;";
+        strategyTitle.textContent = "💡 AI 작성 전략:";
+        
+        const strategyText = document.createTextNode(data.summary);
+        strategyBox.appendChild(strategyTitle);
+        strategyBox.appendChild(strategyText);
+        contentBox.appendChild(strategyBox);
+
+        const renderSection = (title, text) => {
+          const titleDiv = document.createElement('div');
+          titleDiv.className = "or-ai-section-title";
+          titleDiv.textContent = title;
+          contentBox.appendChild(titleDiv);
+          
+          const contentDiv = document.createElement('div');
+          contentDiv.style.cssText = "background: rgba(0,0,0,0.25); padding: 12px; border-radius: 10px; margin-bottom: 12px; white-space: pre-wrap; font-size:13px;";
+          contentDiv.textContent = text;
+          contentBox.appendChild(contentDiv);
+        };
+
+        renderSection("1. 지원동기", data.motivation);
+        renderSection("2. 직무 역량", data.competency);
+        renderSection("3. 성장과정/성격", data.character);
+
+        const copyBtn = document.createElement('button');
+        copyBtn.id = "or-copy-cover";
+        copyBtn.style.cssText = "width: 100%; padding: 12px; background: #4f46e5; color: white; border: none; border-radius: 12px; font-weight: 800; cursor: pointer; margin-top: 15px; transition: all 0.2s;";
+        copyBtn.textContent = "본문 전체 복사하기";
+        
+        contentBox.appendChild(copyBtn);
+        
         copyBtn.addEventListener('click', (e) => {
           const textToCopy = `[지원동기]\n${data.motivation}\n\n[직무 역량]\n${data.competency}\n\n[성장과정/성격]\n${data.character}`;
           navigator.clipboard.writeText(textToCopy).then(() => {
-            copyBtn.innerText = "✨ 복사 완료!";
+            const originalText = copyBtn.textContent;
+            copyBtn.textContent = "✅ 복사 완료!";
             copyBtn.style.background = "#10b981";
             setTimeout(() => {
-              copyBtn.innerText = "본문 전체 복사하기";
+              copyBtn.textContent = originalText;
               copyBtn.style.background = "#4f46e5";
-            }, 2500);
+            }, 2000);
           });
         });
       });

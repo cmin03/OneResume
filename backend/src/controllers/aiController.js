@@ -1,6 +1,117 @@
 const axios = require("axios");
 const prisma = require("../config/prisma");
 
+// [보안] 클라이언트용 안전한 에러 메시지 반환 함수
+const handleAiError = (error, res, customMessage = "AI 분석 서버에 일시적인 문제가 발생했습니다.") => {
+  const errorDetail = error.response?.data?.error?.message || error.message;
+  const statusCode = error.response?.status;
+
+  // 서버 콘솔에는 상세 로그 출력
+  console.log("-----------------------------------------------");
+  console.error(`🚨 AI Error Trace [${new Date().toLocaleString()}]`);
+  console.error(`- Status Code: ${statusCode}`);
+  console.error(`- Error Message: ${errorDetail}`);
+  console.log("-----------------------------------------------");
+  
+  // 429 Quota Exceeded 대응 (Google API 자체 제한)
+  if (statusCode === 429 || error.message.includes("429")) {
+    return res.status(429).json({
+      message: "현재 AI 사용량이 많아 잠시 휴식이 필요합니다.\n약 1분 후 다시 시도해 주세요.",
+      error: "Google Quota Exceeded"
+    });
+  }
+
+  // [v1.8.7 추가] 503 Service Unavailable 대응
+  if (statusCode === 503) {
+    return res.status(503).json({
+      message: "AI 서비스 점검 중이거나 일시적인 과부하 상태입니다.\n잠시 후 다시 시도해 주세요.",
+      error: "AI Service Unavailable"
+    });
+  }
+
+  // 그 외 일반적인 에러 (500)
+  res.status(500).json({ 
+    message: customMessage + " 잠시 후 다시 시도해 주세요.",
+    error: "Internal Server Error"
+  });
+};
+
+// [v1.8.0] Gemini 모델 폴백 리스트 (2026년 실시간 쿼터 최적화)
+const AI_MODELS = [
+  "gemini-3.5-flash",        // 1순위 (현재 20회/일 한도 초과 확인됨)
+  "gemini-3.1-flash-lite",   // 2순위 (스크린샷 기준 500회/일 - 매우 넉넉함)
+  "gemini-2.5-flash-lite",   // 3순위 (스크린샷 기준 500회/일)
+  "gemini-2.5-flash",        // 4순위 (5회/일)
+  "gemini-flash-latest"      // 최후의 보루
+];
+
+/**
+ * [Helper] Gemini API 호출 (폴백 로직 포함)
+ * 429 또는 503 에러 발생 시 다음 가용 모델로 자동 전환합니다.
+ */
+const callGeminiWithFallback = async (prompt, timeout = 30000) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  let lastError = null;
+
+  for (const model of AI_MODELS) {
+    try {
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const response = await axios.post(apiUrl, {
+        contents: [{
+          parts: [{ text: prompt }]
+        }]
+      }, { timeout });
+
+      console.log(`✅ [AI Success] Model: ${model}`);
+      return response.data;
+    } catch (error) {
+      lastError = error;
+      const statusCode = error.response?.status;
+
+      // 429(제한 초과) 또는 503(서비스 일시 불가)인 경우에만 다음 모델 시도
+      if (statusCode === 429 || statusCode === 503) {
+        const errorType = statusCode === 429 ? "Rate Limit (429)" : "Service Unavailable (503)";
+        console.warn(`⚠️ [AI Fallback] Model ${model} failed with ${errorType}. Trying next...`);
+        continue;
+      }
+
+      // 그 외 에러는 즉시 중단
+      throw error;
+    }
+  }
+
+  throw lastError;
+};
+
+/**
+ * [Core] 실시간 JD 추출 엔진
+ * URL에서 채용 공고 본문을 긁어와 텍스트로 변환합니다.
+ */
+const extractTextFromUrl = async (url) => {
+  try {
+    const response = await axios.get(url, {
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+    
+    let html = response.data;
+    // 불필요한 태그 및 공백 제거 (정교한 정규식 기반 추출)
+    let cleanText = html
+      .replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gmi, "")
+      .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gmi, "")
+      .replace(/<[^>]*>?/gm, " ")
+      .replace(/\s\s+/g, " ")
+      .trim();
+
+    return cleanText.substring(0, 10000); // AI가 읽기 적당한 길이로 자름
+  } catch (e) {
+    console.error("URL Extraction Error:", e.message);
+    return null;
+  }
+};
+
 exports.auditResumeContent = async (req, res) => {
   try {
     const { fieldName, content, context } = req.body;
@@ -16,15 +127,16 @@ exports.auditResumeContent = async (req, res) => {
       });
     }
 
-    // [최종 해결] 2.0/2.5는 아직 쿼터가 0일 수 있으므로, 리스트에 있는 안정적인 별칭(Alias) 사용
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
-
     const prompt = `
       당신은 세계 최고의 커리어 코치이자 이력서 첨삭 전문가입니다. 
       사용자가 작성한 이력서의 특정 항목을 분석하여 실시간으로 피드백을 주세요.
 
       [분석 대상 항목]: ${fieldName}
-      [현재 작성된 내용]: "${content}"
+      [현재 작성된 내용]: 
+      <<< USER_INPUT_START >>>
+      "${content}"
+      <<< USER_INPUT_END >>>
+
       [추가 컨텍스트]: ${context || "없음"}
 
       [첨삭 가이드라인]:
@@ -43,14 +155,11 @@ exports.auditResumeContent = async (req, res) => {
       }
     `;
 
-    const response = await axios.post(apiUrl, {
-      contents: [{
-        parts: [{ text: prompt }]
-      }]
-    });
+    // [v1.8.0] 폴백 로직 적용
+    const data = await callGeminiWithFallback(prompt);
 
     // 응답 데이터에서 텍스트 추출
-    const responseText = response.data.candidates[0].content.parts[0].text;
+    const responseText = data.candidates[0].content.parts[0].text;
     
     // JSON 데이터만 추출
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -62,23 +171,25 @@ exports.auditResumeContent = async (req, res) => {
     res.json(auditResult);
 
   } catch (error) {
-    console.error("Gemini API Direct Error:", error.response?.data || error.message);
-    res.status(500).json({ 
-      message: "AI 분석 중 오류가 발생했습니다.",
-      error: error.response?.data?.error?.message || error.message 
-    });
+    handleAiError(error, res);
   }
 };
 
 // [신규] 채용 공고(JD) 매칭 및 점수화 API
 exports.matchJD = async (req, res) => {
   try {
-    const { jdText } = req.body;
+    let { jdText } = req.body;
     const userId = req.user.id;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!jdText || jdText.trim().length < 10) {
       return res.status(400).json({ message: "분석을 위해 공고 URL 또는 내용을 입력해 주세요." });
+    }
+
+    // [v1.2.0 복구] 만약 URL이 들어오면 실시간으로 본문 추출
+    if (jdText.startsWith('http')) {
+      const extracted = await extractTextFromUrl(jdText);
+      if (extracted) jdText = extracted;
     }
 
     // 1. 유저의 마스터 이력서 데이터 조회
@@ -114,27 +225,24 @@ exports.matchJD = async (req, res) => {
       [자기소개]: ${resume.selfIntroGrowth || ""} ${resume.selfIntroCharacter || ""} ${resume.selfIntroMotivation || ""}
     `;
 
-    // 3. Gemini 프롬프트 구성 (URL 대응 강화)
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
-
     const prompt = `
       당신은 기업의 채용 담당자이자 AI 매칭 전문가입니다. 
       사용자의 [이력서]와 제공된 [채용 정보]를 비교 분석하여 정밀한 리포트를 작성하세요.
 
-      [채용 정보 (텍스트 또는 URL)]:
+      [채용 정보]:
+      <<< USER_INPUT_START >>>
       "${jdText}"
+      <<< USER_INPUT_END >>>
 
       [사용자 이력서]:
       "${resumeText}"
 
       [분석 가이드라인]:
-      1. 입력된 내용이 URL인 경우, 해당 플랫폼(사람인, 잡코리아, 원티드 등)과 주소의 구조를 바탕으로 기업명과 직무를 유추하여 당신의 지식 내에서 분석을 시도하세요.
-      2. 만약 제공된 정보가 너무 부족하여 분석이 불가능하다면, improvementTips에 "텍스트로 전체 내용을 붙여넣어 달라"는 안내를 포함시키고 점수는 0점으로 주세요.
-      3. score: 0점에서 100점 사이의 숫자로 매칭 점수를 산출하세요. JD의 필수 역량과 이력서의 경험이 얼마나 일치하는지가 기준입니다.
-      4. coreCompetencies: JD에서 요구하는 핵심 역량 및 기술 스택 3~5개를 추출하세요.
-      5. matchedKeywords: 사용자의 이력서에서 JD와 일치하거나 관련 있는 키워드/경험을 추출하세요.
-      6. missingKeywords: JD에는 있으나 사용자의 이력서에는 부족하거나 보완이 필요한 키워드/역량을 추출하세요.
-      7. improvementTips: 이 공고에 합격하기 위해 이력서의 어느 부분을 어떻게 수정하면 좋을지 구체적인 조언을 3개 이상 제공하세요.
+      1. score: 0점에서 100점 사이의 숫자로 매칭 점수를 산출하세요. JD의 필수 역량과 이력서의 경험이 얼마나 일치하는지가 기준입니다.
+      2. coreCompetencies: JD에서 요구하는 핵심 역량 및 기술 스택 3~5개를 추출하세요.
+      3. matchedKeywords: 사용자의 이력서에서 JD와 일치하거나 관련 있는 키워드/경험을 추출하세요.
+      4. missingKeywords: JD에는 있으나 사용자의 이력서에는 부족하거나 보완이 필요한 키워드/역량을 추출하세요.
+      5. improvementTips: 이 공고에 합격하기 위해 이력서의 어느 부분을 어떻게 수정하면 좋을지 구체적인 조언을 3개 이상 제공하세요.
 
       [답변 형식 (반드시 JSON으로만 답변하세요)]:
       {
@@ -150,13 +258,10 @@ exports.matchJD = async (req, res) => {
       }
     `;
 
-    const response = await axios.post(apiUrl, {
-      contents: [{
-        parts: [{ text: prompt }]
-      }]
-    });
+    // [v1.8.0] 폴백 로직 적용
+    const data = await callGeminiWithFallback(prompt);
 
-    const responseText = response.data.candidates[0].content.parts[0].text;
+    const responseText = data.candidates[0].content.parts[0].text;
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     
     if (!jsonMatch) {
@@ -167,23 +272,25 @@ exports.matchJD = async (req, res) => {
     res.json(result);
 
   } catch (error) {
-    console.error("JD Matching Error:", error.message);
-    res.status(500).json({ 
-      message: "AI 매칭 분석 중 오류가 발생했습니다.",
-      error: error.message 
-    });
+    handleAiError(error, res, "AI 매칭 분석 중 오류가 발생했습니다.");
   }
 };
 
 // [신규] 공고 맞춤형 자소서 생성 API
 exports.generateCoverLetter = async (req, res) => {
   try {
-    const { jdText } = req.body;
+    let { jdText } = req.body;
     const userId = req.user.id;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!jdText || jdText.trim().length < 10) {
       return res.status(400).json({ message: "채용 공고 내용을 입력해 주세요." });
+    }
+
+    // [v1.2.0 복구] 만약 URL이 들어오면 실시간으로 본문 추출
+    if (jdText.startsWith('http')) {
+      const extracted = await extractTextFromUrl(jdText);
+      if (extracted) jdText = extracted;
     }
 
     const user = await prisma.user.findUnique({
@@ -218,14 +325,14 @@ exports.generateCoverLetter = async (req, res) => {
       [기존 자기소개서 - 지원동기 및 포부]: ${resume.selfIntroMotivation || ""}
     `;
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
-
     const prompt = `
       당신은 수많은 합격자를 배출한 취업 전문 컨설턴트입니다.
       사용자의 [기존 이력서 정보]와 제공된 [채용 공고(JD)]를 분석하여, 이 공고에 완벽하게 맞춤화된 자기소개서 초안을 작성해주세요.
 
       [채용 공고]:
+      <<< USER_INPUT_START >>>
       "${jdText}"
+      <<< USER_INPUT_END >>>
 
       [사용자 이력서 정보]:
       "${resumeText}"
@@ -246,13 +353,10 @@ exports.generateCoverLetter = async (req, res) => {
       }
     `;
 
-    const response = await axios.post(apiUrl, {
-      contents: [{
-        parts: [{ text: prompt }]
-      }]
-    });
+    // [v1.8.0] 폴백 로직 적용
+    const data = await callGeminiWithFallback(prompt);
 
-    const responseText = response.data.candidates[0].content.parts[0].text;
+    const responseText = data.candidates[0].content.parts[0].text;
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     
     if (!jsonMatch) {
@@ -263,11 +367,6 @@ exports.generateCoverLetter = async (req, res) => {
     res.json(result);
 
   } catch (error) {
-    console.error("Generate Cover Letter Error:", error.message);
-    res.status(500).json({ 
-      message: "맞춤형 자소서 생성 중 오류가 발생했습니다.",
-      error: error.message 
-    });
+    handleAiError(error, res, "맞춤형 자소서 생성 중 오류가 발생했습니다.");
   }
 };
-

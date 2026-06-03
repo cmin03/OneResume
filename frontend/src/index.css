@@ -2,9 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --safe-area-top: env(safe-area-inset-top);
+  --header-height: 56px;
+  --total-header-height: calc(var(--header-height) + var(--safe-area-top));
+}
+
+@media (max-width: 768px) {
+  :root {
+    --header-height: 62px;
+  }
+}
+
 /* --- Global App Styles --- */
 html, body {
   background-color: #f9f9fb; /* zinc-50 */
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: none; /* 모바일 바운스 효과 억제하여 하단바 로직 안정화 */
   transition: 
     background-color 1.2s cubic-bezier(0.4, 0, 0.2, 1), 
     color 1.2s cubic-bezier(0.4, 0, 0.2, 1),
@@ -137,9 +151,14 @@ html, body {
 
 /* 2. 모바일/태블릿 스타일 (스마트폰 시스템 알림 극소화) */
 @media (max-width: 768px) {
+  /* iOS Safari 입력창 포커스 시 자동 확대 방지 (폰트 16px 미만일 때 발생) */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
   body > div:last-child > div,
   #toaster {
-    top: 12px !important;
+    top: calc(var(--safe-area-top) + 110px) !important;
     bottom: auto !important;
   }
 
@@ -149,14 +168,20 @@ html, body {
     max-width: 90vw !important;
     font-size: 15px !important; /* 가독성을 위해 조금 더 키움 */
     padding: 12px 22px !important;
-    border-radius: 16px !important; /* PC와 동일한 라운드 값 적용 */
+    border-radius: 20px !important; /* 조금 더 둥글게 보정 */
     margin: 0 auto !important;
     font-weight: 700 !important;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15) !important;
+    box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.2) !important;
     white-space: nowrap !important;
     display: flex !important;
     align-items: center !important;
     gap: 10px !important;
+    animation: toast-in 0.5s cubic-bezier(0.23, 1, 0.32, 1) forwards !important;
+  }
+
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(-20px) scale(0.9); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
   }
 
   /* 아이콘 스타일 정밀 보정 */

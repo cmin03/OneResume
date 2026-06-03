@@ -159,14 +159,32 @@ const ResumeForm = ({
     } catch (e) {}
   };
 
+  // [v1.8.2] 검색 디바운싱(Debounce) 로직 추가
+  const [debounceTimer, setDebounceTimer] = useState(null);
+
   const searchMajor = async (keyword) => {
-    if (!keyword || keyword.length < 2) return;
-    try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/resume/search?type=MAJOR&keyword=${encodeURIComponent(keyword)}`);
-      const data = await response.json();
-      setMajorResults(data.dataSearch?.content || []);
-      setShowMajorList(true);
-    } catch (e) {}
+    if (!keyword || keyword.length < 2) {
+      setMajorResults([]);
+      return;
+    }
+
+    // 기존 타이머가 있으면 취소
+    if (debounceTimer) clearTimeout(debounceTimer);
+
+    // 0.4초 뒤에 실제 API 호출
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/resume/search-worknet-dept?keyword=${encodeURIComponent(keyword)}`);
+        const data = await response.json();
+        console.log("🔍 Major Search API Received:", data);
+        setMajorResults(data.univSrch || []);
+        setShowMajorList(true);
+      } catch (e) {
+        console.error("Major Search Error:", e);
+      }
+    }, 400);
+
+    setDebounceTimer(timer);
   };
 
   const searchJob = async (keyword) => {
@@ -185,11 +203,15 @@ const ResumeForm = ({
     }
   };
 
+  const [isAuditing, setIsAuditing] = useState(false);
+
   const handleAiAudit = async (fieldName, content, context) => {
+    if (isAuditing) return;
     if (!content || content.trim().length < 5) {
-      toast.error("분석할 내용이 너무 짧습니다. (최소 5자 이상)");
+      toast.error("분석할 내용이 너무 짧습니다.\n최소 5자 이상 입력해 주세요.");
       return;
     }
+    setIsAuditing(true);
     const loadingToast = toast.loading("AI가 내용을 분석하고 있습니다...");
     try {
       const result = await auditContent(fieldName, content, context);
@@ -197,11 +219,16 @@ const ResumeForm = ({
         setAiFeedback({ ...result, targetField: fieldName });
         setIsAiModalOpen(true);
         toast.success("분석이 완료되었습니다!", { id: loadingToast });
-      } else {
-        toast.error("AI 분석 중 오류가 발생했습니다.", { id: loadingToast });
       }
     } catch (e) {
-      toast.error("네트워크 오류가 발생했습니다.", { id: loadingToast });
+      if (e.response?.status === 429) {
+        toast.dismiss(loadingToast);
+        return;
+      }
+      const errorMsg = e.response?.data?.message || "서버와 통신할 수 없습니다. 네트워크 상태를 확인해 주세요.";
+      toast.error(errorMsg, { id: loadingToast });
+    } finally {
+      setIsAuditing(false);
     }
   };
 
@@ -626,10 +653,30 @@ const ResumeForm = ({
                       </span>
                     </div>
                     <div className="pl-1 flex flex-col gap-1 pt-0.5">
-<div className="flex items-center gap-2"><span className={`text-[10px] md:text-[12px] font-bold ${theme.subText}`}>접속 주소 미리보기:</span><span className="text-[10px] md:text-[13px] font-black text-blue-500 underline underline-offset-4 tracking-tight">https://{formData.subdomain || "your-id"}.oneresume.kr</span></div></div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] md:text-[12px] font-bold ${theme.subText}`}>접속 주소 미리보기:</span>
+                        {formData.subdomain ? (
+                          <a 
+                            href={`https://${formData.subdomain}.oneresume.kr`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-[10px] md:text-[13px] font-black text-blue-500 hover:text-blue-400 transition-colors underline underline-offset-4 tracking-tight flex items-center gap-0.5"
+                          >
+                            https://{formData.subdomain}.oneresume.kr
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5 md:h-3 md:w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        ) : (
+                          <span className="text-[10px] md:text-[13px] font-black text-blue-500/50 underline underline-offset-4 tracking-tight cursor-not-allowed">
+                            https://your-id.oneresume.kr
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className={`p-4 md:p-6 lg:p-8 rounded-2xl md:rounded-[32px] border ${theme.cardBg} space-y-4 md:space-y-8`}><div className="flex items-center gap-2 mb-1"><div className="w-1.5 h-3.5 md:h-4 bg-blue-600 rounded-full" /><h4 className={`text-[11px] md:text-[13px] font-black uppercase tracking-widest ${theme.labelText}`}>외부 링크 연동</h4></div><div className="flex flex-col gap-2"><label className={`pl-1 text-[10px] md:text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>GitHub 주소</label><div className="flex gap-2 md:gap-3"><input type="text" name="githubUrl" value={formData.githubUrl || ""} onChange={handleChange} placeholder="https://github.com/your-id" className={`flex-1 px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border outline-none transition-all text-[14px] md:text-base ${theme.innerInputBg}`} />{formData.githubUrl && <button type="button" onClick={handleGithubSync} className="bg-zinc-900 dark:bg-blue-600 text-white font-black px-4 md:px-6 rounded-lg md:rounded-xl text-[10px] md:text-xs active:scale-95 transition-all">동기화</button>}</div></div><div className="flex flex-col gap-2"><label className={`pl-1 text-[10px] md:text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>기술 블로그</label><input type="text" name="blogUrl" value={formData.blogUrl || ""} onChange={handleChange} placeholder="https://velog.io/@your-id" className={`w-full px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border outline-none transition-all text-[14px] md:text-base ${theme.innerInputBg}`} /></div></div>
+                <div className={`p-4 md:p-6 lg:p-8 rounded-2xl md:rounded-[32px] border ${theme.cardBg} space-y-4 md:space-y-8`}><div className="flex items-center gap-2 mb-1"><div className="w-1.5 h-3.5 md:h-4 bg-blue-600 rounded-full" /><h4 className={`text-[11px] md:text-[13px] font-black uppercase tracking-widest ${theme.labelText}`}>외부 링크 연동</h4></div><div className="flex flex-col gap-2"><label className={`pl-1 text-[10px] md:text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>GitHub 주소</label><div className="flex gap-2 md:gap-3"><input type="text" name="githubUrl" value={formData.githubUrl || ""} onChange={handleChange} placeholder="https://github.com/your-id" className={`flex-1 px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border outline-none transition-all text-[14px] md:text-base ${theme.innerInputBg}`} />{formData.githubUrl && <button type="button" onClick={handleGithubSync} className="bg-zinc-900 dark:bg-blue-600 text-white font-black px-4 md:px-6 rounded-lg md:rounded-xl text-[10px] md:text-xs active:scale-95 transition-all whitespace-nowrap flex-shrink-0">동기화</button>}</div></div><div className="flex flex-col gap-2"><label className={`pl-1 text-[10px] md:text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>기술 블로그</label><input type="text" name="blogUrl" value={formData.blogUrl || ""} onChange={handleChange} placeholder="https://velog.io/@your-id" className={`w-full px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border outline-none transition-all text-[14px] md:text-base ${theme.innerInputBg}`} /></div></div>
                 {renderStepNavigation()}
               </div>
             )}
@@ -637,7 +684,20 @@ const ResumeForm = ({
             {activeTab === 'edu' && (
               <div className="space-y-4 md:space-y-8 animate-fade-in">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-                  <div className={`p-4 md:p-6 lg:p-8 rounded-2xl md:rounded-[32px] border ${theme.cardBg} space-y-4 md:space-y-6`}><h4 className={`text-[10px] md:text-[13px] font-black uppercase tracking-widest ${theme.labelText} mb-1`}>학력 사항</h4><div className="relative flex flex-col gap-1.5 md:gap-2"><label className={`pl-1 text-[10px] md:text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>학교명</label><input type="text" name="school" value={formData.school || ""} onChange={(e) => { handleChange(e); searchSchool(e.target.value); }} onFocus={() => (formData?.school || "").length >= 2 && setShowSchoolList(true)} onBlur={() => setTimeout(() => setShowSchoolList(false), 200)} autoComplete="off" placeholder="학교명 입력 (2자 이상)" className={`w-full px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border outline-none transition-all text-[14px] md:text-base ${theme.innerInputBg}`} />{showSchoolList && (<div className={`absolute top-[calc(100%+8px)] left-0 right-0 z-50 max-h-60 overflow-y-auto rounded-xl md:rounded-2xl border-2 shadow-2xl ${isDarkMode ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-100'}`}>{schoolResults.length > 0 ? schoolResults.map((item, idx) => (<div key={idx} onClick={() => { handleChange({ target: { name: 'school', value: item.schoolName } }); setShowSchoolList(false); }} className={`px-4 md:px-5 py-2.5 md:py-3 cursor-pointer border-b last:border-0 transition-colors ${isDarkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-zinc-50 hover:bg-blue-50'}`}><div className={`font-black text-[13px] md:text-[14px] ${isDarkMode ? 'text-white' : 'text-zinc-800'}`}>{item.schoolName}</div><div className={`text-[10px] md:text-[11px] mt-0.5 ${isDarkMode ? 'text-zinc-400' : 'text-zinc-500 opacity-70'}`}>{item.region} | {item.campusName}</div></div>)) : <div className={`p-4 text-center text-[10px] font-bold ${isDarkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>결과가 없습니다.</div>}</div>)}</div><div className="relative flex flex-col gap-1.5 md:gap-2"><label className={`pl-1 text-[10px] md:text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>전공명</label><input type="text" name="major" value={formData.major || ""} onChange={(e) => { handleChange(e); searchMajor(e.target.value); }} onFocus={() => (formData?.major || "").length >= 2 && setShowMajorList(true)} onBlur={() => setTimeout(() => setShowMajorList(false), 200)} autoComplete="off" placeholder="전공명 입력 (2자 이상)" className={`w-full px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border outline-none transition-all text-[14px] md:text-base ${theme.innerInputBg}`} />{showMajorList && (<div className={`absolute top-[calc(100%+8px)] left-0 right-0 z-50 max-h-60 overflow-y-auto rounded-xl md:rounded-2xl border-2 shadow-2xl ${isDarkMode ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-100'}`}>{majorResults.length > 0 ? majorResults.map((item, idx) => (<div key={idx} onClick={() => { handleChange({ target: { name: 'major', value: item.majorName } }); setShowMajorList(false); }} className={`px-4 md:px-5 py-2.5 md:py-3 cursor-pointer border-b last:border-0 transition-colors ${isDarkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-zinc-50 hover:bg-blue-50'}`}><div className={`font-black text-[13px] md:text-[14px] ${isDarkMode ? 'text-white' : 'text-zinc-800'}`}>{item.majorName}</div></div>)) : <div className={`p-4 text-center text-[10px] font-bold ${isDarkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>결과가 없습니다.</div>}</div>)}</div><div className="flex flex-col gap-1.5 md:gap-2"><label className={`pl-1 text-[10px] md:text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>학점</label><div className="flex items-center gap-3"><input type="text" name="gpa" value={formData.gpa || ""} onChange={handleChange} placeholder="4.5" className={`w-32 px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border outline-none transition-all text-[14px] md:text-base ${theme.innerInputBg}`} /><span className={`text-[12px] font-bold ${theme.subText}`}>/ 4.5</span></div></div></div>
+                  <div className={`p-4 md:p-6 lg:p-8 rounded-2xl md:rounded-[32px] border ${theme.cardBg} space-y-4 md:space-y-6`}><h4 className={`text-[10px] md:text-[13px] font-black uppercase tracking-widest ${theme.labelText} mb-1`}>학력 사항</h4><div className="relative flex flex-col gap-1.5 md:gap-2"><label className={`pl-1 text-[10px] md:text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>학교명</label><input type="text" name="school" value={formData.school || ""} onChange={(e) => { handleChange(e); searchSchool(e.target.value); }} onFocus={() => (formData?.school || "").length >= 2 && setShowSchoolList(true)} onBlur={() => setTimeout(() => setShowSchoolList(false), 200)} autoComplete="off" placeholder="학교명 입력 (2자 이상)" className={`w-full px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border outline-none transition-all text-[14px] md:text-base ${theme.innerInputBg}`} />{showSchoolList && (<div className={`absolute top-[calc(100%+8px)] left-0 right-0 z-50 max-h-60 overflow-y-auto rounded-xl md:rounded-2xl border-2 shadow-2xl ${isDarkMode ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-100'}`}>{schoolResults.length > 0 ? schoolResults.map((item, idx) => (<div key={idx} onClick={() => { handleChange({ target: { name: 'school', value: item.schoolName } }); setShowSchoolList(false); }} className={`px-4 md:px-5 py-2.5 md:py-3 cursor-pointer border-b last:border-0 transition-colors ${isDarkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-zinc-50 hover:bg-blue-50'}`}><div className={`font-black text-[13px] md:text-[14px] ${isDarkMode ? 'text-white' : 'text-zinc-800'}`}>{item.schoolName}</div><div className={`text-[10px] md:text-[11px] mt-0.5 ${isDarkMode ? 'text-zinc-400' : 'text-zinc-500 opacity-70'}`}>{item.region} | {item.campusName}</div></div>)) : <div className={`p-4 text-center text-[10px] font-bold ${isDarkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>결과가 없습니다.</div>}</div>)}</div><div className="relative flex flex-col gap-1.5 md:gap-2"><label className={`pl-1 text-[10px] md:text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>전공명</label><input type="text" name="major" value={formData.major || ""} onChange={(e) => { handleChange(e); searchMajor(e.target.value); }} onFocus={() => (formData?.major || "").length >= 2 && setShowMajorList(true)} onBlur={() => setTimeout(() => setShowMajorList(false), 200)} autoComplete="off" placeholder="전공명 입력 (2자 이상)" className={`w-full px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border outline-none transition-all text-[14px] md:text-base ${theme.innerInputBg}`} />{showMajorList && (<div className={`absolute top-[calc(100%+8px)] left-0 right-0 z-50 max-h-60 overflow-y-auto rounded-xl md:rounded-2xl border-2 shadow-2xl ${isDarkMode ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-100'}`}>{majorResults.length > 0 ? majorResults.map((item, idx) => (
+  <div key={idx} onClick={() => { 
+    const finalVal = item.majorName || item.knowSchDptNm || "학과명 정보 없음";
+    handleChange({ target: { name: 'major', value: finalVal } }); 
+    setShowMajorList(false); 
+  }} className={`px-4 md:px-5 py-2.5 md:py-3 cursor-pointer border-b last:border-0 transition-colors ${isDarkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-zinc-50 hover:bg-blue-50'}`}>
+    <div className={`font-black text-[13px] md:text-[14px] ${isDarkMode ? 'text-white' : 'text-zinc-800'}`}>
+      {item.majorName || item.knowSchDptNm || "이름 정보 없음"}
+    </div>
+    <div className={`text-[10px] md:text-[11px] mt-0.5 ${isDarkMode ? 'text-zinc-400' : 'text-zinc-500 opacity-70'}`}>
+      {item.detailName || item.knowDtlSchDptNm || "세부 정보 없음"}
+    </div>
+  </div>
+)) : <div className={`p-4 text-center text-[10px] font-bold ${isDarkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>결과가 없습니다.</div>}</div>)}</div><div className="flex flex-col gap-1.5 md:gap-2"><label className={`pl-1 text-[10px] md:text-[12px] font-black uppercase tracking-wider ${theme.labelText}`}>학점</label><div className="flex items-center gap-3"><input type="text" name="gpa" value={formData.gpa || ""} onChange={handleChange} placeholder="4.5" className={`w-32 px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border outline-none transition-all text-[14px] md:text-base ${theme.innerInputBg}`} /><span className={`text-[12px] font-bold ${theme.subText}`}>/ 4.5</span></div></div></div>
                   <div className={`p-4 md:p-6 lg:p-8 rounded-2xl md:rounded-[32px] border ${theme.cardBg} flex flex-col`}><h4 className={`text-[10px] md:text-[13px] font-black uppercase tracking-widest ${theme.labelText} mb-3 md:mb-4`}>보유 기술</h4><textarea name="skills" value={formData.skills || ""} onChange={handleChange} onInput={autoExpand} rows="8" placeholder="기술을 콤마(,)로 구분 (예: React, TypeScript)" className={`flex-1 w-full px-4 py-4 rounded-xl border outline-none transition-all ${theme.innerInputBg} resize-none leading-relaxed min-h-[160px] md:min-h-[200px] text-[14px] md:text-base`} /></div>
                 </div>
                 {renderStepNavigation()}

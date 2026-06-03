@@ -77,7 +77,7 @@ const SetupProfile = ({ isDarkMode, toggleDarkMode }) => {
             <p className="text-lg font-bold text-blue-600">oneresume.dev@gmail.com</p>
           </div>
           <div className={`p-4 rounded-2xl border ${isDarkMode ? 'bg-blue-600/5 border-blue-500/20' : 'bg-blue-50 border-blue-100'}`}>
-            <p className="text-sm font-medium mb-1 text-blue-600 opacity-80 font-bold">개발자 직통 문의 (빠른 답변)</p>
+            <p className="text-sm mb-1 text-blue-600 opacity-80 font-bold">개발자 직통 문의 (빠른 답변)</p>
             <p className="text-lg font-bold text-blue-600">parkjeongung0705@gmail.com</p>
           </div>
         </div>
@@ -378,6 +378,10 @@ const SetupProfile = ({ isDarkMode, toggleDarkMode }) => {
       toast.success("프로필 작성이 완료되었습니다!", { id: loading });
       navigate('/edit'); 
     } catch (err) {
+      if (err.response?.status === 429) {
+        toast.dismiss(loading);
+        return;
+      }
       toast.error(err.response?.data?.message || "프로필 저장 실패", { id: loading });
     }
   };
@@ -426,7 +430,10 @@ const SetupProfile = ({ isDarkMode, toggleDarkMode }) => {
         )}
       </AnimatePresence>
 
-      <header className={`h-14 px-4 md:px-6 border-b flex items-center justify-between z-40 relative backdrop-blur-md transition-all duration-300 ${isDarkMode ? 'bg-zinc-900/90 border-zinc-800 shadow-lg shadow-black/20' : 'bg-white/90 border-zinc-200 shadow-sm'}`}>
+      <header 
+        style={{ paddingTop: 'var(--safe-area-top)' }}
+        className={`h-auto min-h-[56px] px-4 md:px-6 border-b flex items-center justify-between z-40 relative backdrop-blur-md transition-all duration-300 ${isDarkMode ? 'bg-zinc-900/90 border-zinc-800 shadow-lg shadow-black/20' : 'bg-white/90 border-zinc-200 shadow-sm'}`}
+      >
         <div className="flex items-center gap-2.5">
           <img src={logo} alt="OneResume Logo" className="w-7 h-7 md:w-8 md:h-8 object-contain" />
           <h1 className={`text-[1rem] md:text-[1.2rem] font-black tracking-tighter ${isDarkMode ? 'text-white' : 'text-zinc-800'}`}>OneResume</h1>

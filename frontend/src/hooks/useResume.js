@@ -282,7 +282,10 @@ const useResume = () => {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/ai/audit`, { fieldName, content, context });
       return response.data;
-    } catch (error) { return null; }
+    } catch (error) { 
+      // 에러를 throw하여 ResumeForm에서 구체적인 메시지를 띄울 수 있게 함
+      throw error;
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -290,7 +293,7 @@ const useResume = () => {
     const token = localStorage.getItem("oneresume-token") || sessionStorage.getItem("oneresume-token");
     
     if (!token) {
-      toast.error("로그인 세션이 만료되었습니다. 다시 로그인해주세요.");
+      toast.error("로그인 세션이 만료되었습니다.\n다시 로그인해주세요.");
       navigate("/");
       return;
     }
@@ -310,6 +313,10 @@ const useResume = () => {
       }
     } catch (error) {
       console.error("저장 중 오류 발생:", error);
+      if (error.response?.status === 429) {
+        toast.dismiss(loadingToast);
+        return;
+      }
       const errorMessage = error.response?.data?.message || "서버 저장 중 오류가 발생했습니다. 다시 시도해주세요.";
       toast.error(errorMessage, { id: loadingToast });
     }
